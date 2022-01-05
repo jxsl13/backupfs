@@ -31,7 +31,7 @@ type BackupFs struct {
 	backup afero.Fs
 }
 
-// Returns true if the file is not in the backup
+// Returns true if the file is not in the backup layer
 func (fs *BackupFs) isBaseFile(name string) (os.FileInfo, bool, error) {
 	// file exists in backup ->
 	if _, err := fs.backup.Stat(name); err == nil {
@@ -58,15 +58,12 @@ func (s *BackupFs) Create(name string) (File, error) {
 	if err != nil {
 		return nil, err
 	}
-	// file does not exist in base layer
-	if !isBf {
-		return s.backup.Create(name)
-	}
-
-	// file does exist in base layer, move to backup layer
-	err = copyToLayer(s.base, s.backup, name)
-	if err != nil {
-		return nil, err
+	if isBf {
+		// file does exist in base layer, move to backup layer
+		err = copyToLayer(s.base, s.backup, name)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// create or truncate file
@@ -76,6 +73,7 @@ func (s *BackupFs) Create(name string) (File, error) {
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
 func (s *BackupFs) Mkdir(name string, perm os.FileMode) error {
+	// TODO check if subdirs existed, backup subdirs structure
 	return s.base.Mkdir(name, perm)
 }
 
@@ -135,7 +133,7 @@ func (s *BackupFs) MkdirAll(path string, perm os.FileMode) error {
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
 func (s *BackupFs) Open(name string) (File, error) {
-	return s.base.Open(name)
+	return s.OpenFile(name, os.O_RDONLY, 0)
 }
 
 // OpenFile opens a file using the given flags and the given mode.
@@ -144,21 +142,24 @@ func (s *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, erro
 	if err != nil {
 		return nil, err
 	}
-	// file does not exist in base layer
-	if !isBf {
-		return s.base.OpenFile(name, flag, perm)
-	}
+	// file does exist in base layer
+	if isBf {
+		oldPerm := baseStat.Mode()
+		// file is being opened in read only mode
+		if flag == os.O_RDONLY && oldPerm == perm {
+			return s.base.OpenFile(name, os.O_RDONLY, oldPerm)
+		}
 
-	oldPerm := baseStat.Mode()
-	// file is being opened in read only mode
-	if flag == os.O_RDONLY && oldPerm == perm {
-		return s.base.OpenFile(name, os.O_RDONLY, oldPerm)
-	}
+		// file does exist in base layer, move to backup layer
+		err = copyToLayer(s.base, s.backup, name)
+		if err != nil {
+			return nil, err
+		}
 
-	// file does exist in base layer, move to backup layer
-	err = copyToLayer(s.base, s.backup, name)
-	if err != nil {
-		return nil, err
+		err = s.backup.Chmod(name, oldPerm)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return s.base.OpenFile(name, flag, perm)
@@ -172,15 +173,15 @@ func (s *BackupFs) Remove(name string) error {
 		return err
 	}
 
-	if !isBf {
-		return s.base.Remove(name)
+	// base file exists
+	if isBf {
+		// file does exist in base layer, move to backup layer
+		err = copyToLayer(s.base, s.backup, name)
+		if err != nil {
+			return err
+		}
 	}
 
-	// file does exist in base layer, move to backup layer
-	err = copyToLayer(s.base, s.backup, name)
-	if err != nil {
-		return err
-	}
 	return s.base.Remove(name)
 }
 
@@ -193,8 +194,21 @@ func (s *BackupFs) RemoveAll(path string) error {
 
 // Rename renames a file.
 func (s *BackupFs) Rename(oldname, newname string) error {
-	//return s.base.Rename(oldname, newname)
-	return syscall.EPERM
+	_, isBf, err := s.isBaseFile(oldname)
+	if err != nil {
+		return err
+	}
+
+	// base file exists
+	if isBf {
+		// file does exist in base layer, move to backup layer
+		err = copyToLayer(s.base, s.backup, oldname)
+		if err != nil {
+			return err
+		}
+	}
+
+	return s.base.Rename(oldname, newname)
 }
 
 // Stat returns a FileInfo describing the named file, or an error, if any
@@ -210,18 +224,63 @@ func (s *BackupFs) Name() string {
 
 // Chmod changes the mode of the named file to mode.
 func (s *BackupFs) Chmod(name string, mode os.FileMode) error {
-	//return s.base.Chmod(name, mode)#
-	return syscall.EPERM
+	info, isBf, err := s.isBaseFile(name)
+	if err != nil {
+		return err
+	}
+
+	// base file exists
+	if isBf {
+		oldeMode := info.Mode()
+		if oldeMode == mode {
+			return nil
+		}
+
+		// file does exist in base layer, move to backup layer
+		err = copyToLayer(s.base, s.backup, name)
+		if err != nil {
+			return err
+		}
+
+		err = s.backup.Chmod(name, oldeMode)
+		if err != nil {
+			return err
+		}
+	}
+
+	return s.base.Chmod(name, mode)
 }
 
 // Chown changes the uid and gid of the named file.
 func (s *BackupFs) Chown(name string, uid, gid int) error {
-	//return s.base.Chown(name, uid, gid)
-	return syscall.EPERM
+	info, isBf, err := s.isBaseFile(name)
+	if err != nil {
+		return err
+	}
+
+	//base file exists
+	if stat, ok := info.Sys().(*syscall.Stat_t); isBf && ok {
+		oldUid := int(stat.Uid)
+		oldGid := int(stat.Gid)
+
+		// file does exist in base layer, move to backup layer
+		err = copyToLayer(s.base, s.backup, name)
+		if err != nil {
+			return err
+		}
+
+		err = s.backup.Chown(name, oldUid, oldGid)
+		if err != nil {
+			return err
+		}
+	}
+
+	return s.base.Chown(name, uid, gid)
 }
 
 //Chtimes changes the access and modification times of the named file
 func (s *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
+	// TODO: continue
 	//return s.base.Chtimes(name, atime, mtime)
 	return syscall.EPERM
 }
