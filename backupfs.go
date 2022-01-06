@@ -3,6 +3,7 @@ package backupfs
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -44,6 +45,7 @@ type BackupFs struct {
 	// file system.
 	// it is not nil in case that the file existed on the base file system
 	baseInfos map[string]os.FileInfo
+	mu        sync.Mutex
 }
 
 // The name of this FileSystem
@@ -63,6 +65,13 @@ func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
 // happens.
 // Stat only looks at the base filesystem and returns the stat of the files at the specified path
 func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	return fs.stat(name)
+}
+
+func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
 	fi, err := fs.base.Stat(name)
 
 	// keep track of initial
@@ -89,16 +98,19 @@ func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
 }
 
 func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool, err error) {
+	fs.mu.Lock()
 	info, found := fs.baseInfos[path]
 	if !found {
 		// fill fs.baseInfos
-		info, err = fs.Stat(path)
+		info, err = fs.stat(path)
 		if err != nil {
+			fs.mu.Unlock()
 			return nil, false, err
 		}
 	}
+	fs.mu.Unlock()
 
-	// at this pint fi is either set by baseINfos or by fs.Stat
+	// at this point info is either set by baseInfos or by fs.tat
 	if info == nil {
 		//actually no file expected at that location
 		return nil, false, nil
@@ -209,7 +221,7 @@ func (fs *BackupFs) Open(name string) (File, error) {
 
 // OpenFile opens a file using the given flags and the given mode.
 func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	fi, err := os.Stat(name)
+	fi, err := fs.Stat(name)
 	if err != nil {
 		return nil, err
 	}
