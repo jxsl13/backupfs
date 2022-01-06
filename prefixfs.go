@@ -3,7 +3,6 @@ package backupfs
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/afero"
@@ -21,55 +20,9 @@ type PrefixFs struct {
 	base   afero.Fs
 }
 
-func removeStrings(lookupIn, applyTo string, remove ...string) (cleaned string, found bool) {
-	found = false
-	for _, rem := range remove {
-		i := -1
-		for {
-			i++
-			idx := -1
-			switch i % 2 {
-			case 0:
-				idx = strings.Index(lookupIn, rem)
-			case 1:
-				idx = strings.LastIndex(lookupIn, rem)
-			}
-
-			// as long as we do find rem, try to replace rem
-			if idx >= 0 {
-				lookupIn = lookupIn[0:idx] + lookupIn[idx+len(rem):]
-				applyTo = applyTo[0:idx] + applyTo[idx+len(rem):]
-				found = true
-				continue
-			}
-
-			break
-		}
-
-	}
-	return applyTo, found
-}
-
-var (
-	removalSet = []string{"../", "./", "..\\", ".\\"}
-)
 
 func (s *PrefixFs) prefixPath(name string) string {
-	name = strings.TrimRight(name, "./\\")
-
-	for {
-		slashName := filepath.ToSlash(name)
-		cleaned, found := removeStrings(slashName, name, removalSet...)
-		if found {
-			name = cleaned
-			continue
-		}
-
-		break
-	}
-
-	prefixedPath := filepath.Join(s.prefix, filepath.Clean(name))
-	return prefixedPath
+	return filepath.Join(s.prefix, cleanPath(name))
 }
 
 // Create creates a file in the filesystem, returning the file and an

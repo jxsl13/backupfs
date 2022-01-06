@@ -3,7 +3,6 @@ package backupfs
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -18,284 +17,281 @@ type File = afero.File
 
 // New creates a new layered backup file system that backups files from fs to backup in case that an
 // existing file in fs is about to be overwritten or removed.
-func New(base, backup afero.Fs) *BackupFs {
+func NewBackupFs(base, backup afero.Fs) *BackupFs {
 	return &BackupFs{
 		base:   base,
 		backup: backup,
+
+		// this map is needed in order to keep track of non existing files
+		// consecutive changes might lead to file sbeing backe dup
+		// that were never there before
+		// but could have been written byus in the mean time.
+		// without this structure we would never know where there was actually
+		// no previous file to be backe dup.
+		baseInfos: make(map[string]os.FileInfo),
 	}
 }
 
 //
 type BackupFs struct {
-	base   afero.Fs
+	// base filesystem which may be overwritten
+	base afero.Fs
+	// any initially overwritten file will be backed up to this filesystem
 	backup afero.Fs
+
+	// keeps track of base file system initial file state infos
+	// os.FileInfo may be nil in case that the file never existed on the base
+	// file system.
+	// it is not nil in case that the file existed on the base file system
+	baseInfos map[string]os.FileInfo
 }
 
-// Returns true if the file is not in the backup layer
-func (fs *BackupFs) isBaseFile(name string) (os.FileInfo, bool, error) {
-	// file exists in backup ->
-	if _, err := fs.backup.Stat(name); err == nil {
-		return nil, false, nil
-	}
-	stat, err := fs.base.Stat(name)
-	if err != nil {
-		if oerr, ok := err.(*os.PathError); ok {
-			if oerr.Err == os.ErrNotExist || oerr.Err == syscall.ENOENT || oerr.Err == syscall.ENOTDIR {
-				return nil, false, nil
-			}
-		}
-		if err == syscall.ENOENT {
-			return nil, false, nil
-		}
-	}
-	return stat, true, err
+// The name of this FileSystem
+func (fs *BackupFs) Name() string {
+	return "BackupFs"
 }
 
-// Create creates a file in the filesystem, returning the file and an
-// error, if any happens.
-func (s *BackupFs) Create(name string) (File, error) {
-	_, isBf, err := s.isBaseFile(name)
-	if err != nil {
-		return nil, err
+// updates
+func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
+	_, found := fs.baseInfos[path]
+	if !found {
+		fs.baseInfos[path] = info
 	}
-	if isBf {
-		// file does exist in base layer, move to backup layer
-		err = copyToLayer(s.base, s.backup, name)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// create or truncate file
-	return s.base.Create(name)
-}
-
-// Mkdir creates a directory in the filesystem, return an error if any
-// happens.
-func (s *BackupFs) Mkdir(name string, perm os.FileMode) error {
-	// TODO check if subdirs existed, backup subdirs structure
-	return s.base.Mkdir(name, perm)
-}
-
-// MkdirAll creates a directory path and all parents that does not exist
-// yet.
-func (s *BackupFs) MkdirAll(path string, perm os.FileMode) error {
-	name := strings.TrimRight(path, string(filepath.Separator))
-
-	create := false
-	lastIndex := 0
-	for i, r := range name {
-		if i == 0 && r == filepath.Separator {
-			continue
-		}
-		create = false
-
-		if r == filepath.Separator {
-			create = true
-			lastIndex = i - 1
-		} else if i == len(name)-1 {
-			create = true
-			lastIndex = i
-		}
-
-		if create {
-			// /path -> /path/subpath -> /path/subpath/subsubpath etc.
-			dirPath := name[:lastIndex]
-
-			exists, err := dirExists(s.backup, dirPath)
-			if err != nil {
-				return err
-			}
-			if exists {
-				// dir exists in backup already
-				// no need to create
-				continue
-			}
-
-			// does not exist in backup
-			// get permissions
-			baseDir, err := s.base.Stat(dirPath)
-			if err != nil {
-				return err
-			}
-
-			// create dir
-			err = s.backup.Mkdir(dirPath, baseDir.Mode().Perm())
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// Open opens a file, returning it or an error, if any happens.
-// This returns a ready only file
-func (s *BackupFs) Open(name string) (File, error) {
-	return s.OpenFile(name, os.O_RDONLY, 0)
-}
-
-// OpenFile opens a file using the given flags and the given mode.
-func (s *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	baseStat, isBf, err := s.isBaseFile(name)
-	if err != nil {
-		return nil, err
-	}
-	// file does exist in base layer
-	if isBf {
-		oldPerm := baseStat.Mode()
-		// file is being opened in read only mode
-		if flag == os.O_RDONLY && oldPerm == perm {
-			return s.base.OpenFile(name, os.O_RDONLY, oldPerm)
-		}
-
-		// file does exist in base layer, move to backup layer
-		err = copyToLayer(s.base, s.backup, name)
-		if err != nil {
-			return nil, err
-		}
-
-		err = s.backup.Chmod(name, oldPerm)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return s.base.OpenFile(name, flag, perm)
-}
-
-// Remove removes a file identified by name, returning an error, if any
-// happens.
-func (s *BackupFs) Remove(name string) error {
-	_, isBf, err := s.isBaseFile(name)
-	if err != nil {
-		return err
-	}
-
-	// base file exists
-	if isBf {
-		// file does exist in base layer, move to backup layer
-		err = copyToLayer(s.base, s.backup, name)
-		if err != nil {
-			return err
-		}
-	}
-
-	return s.base.Remove(name)
-}
-
-// RemoveAll removes a directory path and any children it contains. It
-// does not fail if the path does not exist (return nil).
-func (s *BackupFs) RemoveAll(path string) error {
-	//return s.base.RemoveAll(path)
-	return syscall.EPERM
-}
-
-// Rename renames a file.
-func (s *BackupFs) Rename(oldname, newname string) error {
-	_, isBf, err := s.isBaseFile(oldname)
-	if err != nil {
-		return err
-	}
-
-	// base file exists
-	if isBf {
-		// file does exist in base layer, move to backup layer
-		err = copyToLayer(s.base, s.backup, oldname)
-		if err != nil {
-			return err
-		}
-	}
-
-	return s.base.Rename(oldname, newname)
 }
 
 // Stat returns a FileInfo describing the named file, or an error, if any
 // happens.
-func (s *BackupFs) Stat(name string) (os.FileInfo, error) {
-	return s.base.Stat(name)
+// Stat only looks at the base filesystem and returns the stat of the files at the specified path
+func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
+	fi, err := fs.base.Stat(name)
+
+	// keep track of initial
+	if err != nil {
+		if oerr, ok := err.(*os.PathError); ok {
+			if oerr.Err == os.ErrNotExist || oerr.Err == syscall.ENOENT || oerr.Err == syscall.ENOTDIR {
+
+				fs.setBaseInfoIfNotFound(name, nil)
+				return nil, err
+			}
+		}
+		if err == syscall.ENOENT {
+			fs.setBaseInfoIfNotFound(name, nil)
+			return nil, err
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	fs.setBaseInfoIfNotFound(name, fi)
+	return fi, nil
 }
 
-// The name of this FileSystem
-func (s *BackupFs) Name() string {
-	return "BackupFs"
+func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool, err error) {
+	info, found := fs.baseInfos[path]
+	if !found {
+		// fill fs.baseInfos
+		info, err = fs.Stat(path)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
+	// at this pint fi is either set by baseINfos or by fs.Stat
+	if info == nil {
+		//actually no file expected at that location
+		return nil, false, nil
+	}
+
+	// file found at base fs location
+
+	// did we already backup that file?
+	foundBackup, err := exists(fs.backup, path)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if foundBackup {
+		// no need to backup, as we already backe dup the file
+		return nil, false, nil
+	}
+
+	// backup is needed
+	return info, true, nil
 }
 
-// Chmod changes the mode of the named file to mode.
-func (s *BackupFs) Chmod(name string, mode os.FileMode) error {
-	info, isBf, err := s.isBaseFile(name)
+func (fs *BackupFs) tryBackup(name string) error {
+	name = cleanPath(name)
+
+	info, needsBackup, err := fs.backupRequired(name)
 	if err != nil {
 		return err
 	}
+	if !needsBackup {
+		return nil
+	}
 
-	// base file exists
-	if isBf {
-		oldeMode := info.Mode()
-		if oldeMode == mode {
+	dirPath := name
+	if !info.IsDir() {
+		// is file, get dir
+		dirPath = filepath.Dir(dirPath)
+	}
+
+	err = iterateDirTree(dirPath, func(subDirPath string) error {
+		fi, required, err := fs.backupRequired(subDirPath)
+		if err != nil {
+			return err
+		}
+
+		if !required {
 			return nil
 		}
 
-		// file does exist in base layer, move to backup layer
-		err = copyToLayer(s.base, s.backup, name)
-		if err != nil {
-			return err
-		}
-
-		err = s.backup.Chmod(name, oldeMode)
-		if err != nil {
-			return err
-		}
-	}
-
-	return s.base.Chmod(name, mode)
-}
-
-// Chown changes the uid and gid of the named file.
-func (s *BackupFs) Chown(name string, uid, gid int) error {
-	info, isBf, err := s.isBaseFile(name)
+		return copyDir(fs.backup, subDirPath, fi)
+	})
 	if err != nil {
 		return err
 	}
 
-	//base file exists
-	if stat, ok := info.Sys().(*syscall.Stat_t); isBf && ok {
-		oldUid := int(stat.Uid)
-		oldGid := int(stat.Gid)
-
-		// file does exist in base layer, move to backup layer
-		err = copyToLayer(s.base, s.backup, name)
-		if err != nil {
-			return err
-		}
-
-		err = s.backup.Chown(name, oldUid, oldGid)
-		if err != nil {
-			return err
-		}
+	if info.IsDir() {
+		// name was a dir path, we are finished
+		return nil
 	}
 
-	return s.base.Chown(name, uid, gid)
+	// name was a path to a file
+	// create the file
+	sf, err := fs.base.Open(name)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+	return copyFile(fs.backup, name, info, sf)
 }
 
-//Chtimes changes the access and modification times of the named file
-func (s *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
-	// TODO: continue
-	//return s.base.Chtimes(name, atime, mtime)
+// Create creates a file in the filesystem, returning the file and an
+// error, if any happens.
+func (fs *BackupFs) Create(name string) (File, error) {
+	err := fs.tryBackup(name)
+	if err != nil {
+		return nil, err
+	}
+	// create or truncate file
+	return fs.base.Create(name)
+}
+
+// Mkdir creates a directory in the filesystem, return an error if any
+// happens.
+func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
+	err := fs.tryBackup(name)
+	if err != nil {
+		return err
+	}
+	return fs.base.Mkdir(name, perm)
+}
+
+// MkdirAll creates a directory path and all
+// parents that does not exist yet.
+func (fs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
+	err := fs.tryBackup(name)
+	if err != nil {
+		return err
+	}
+
+	return fs.base.MkdirAll(name, perm)
+}
+
+// Open opens a file, returning it or an error, if any happens.
+// This returns a ready only file
+func (fs *BackupFs) Open(name string) (File, error) {
+	return fs.OpenFile(name, os.O_RDONLY, 0)
+}
+
+// OpenFile opens a file using the given flags and the given mode.
+func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	fi, err := os.Stat(name)
+	if err != nil {
+		return nil, err
+	}
+
+	oldPerm := fi.Mode().Perm()
+	if flag == os.O_RDONLY && oldPerm == perm {
+		return fs.base.OpenFile(name, os.O_RDONLY, oldPerm)
+	}
+
+	// not read only opening -> backup
+	err = fs.tryBackup(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return fs.base.OpenFile(name, flag, perm)
+}
+
+// Remove removes a file identified by name, returning an error, if any
+// happens.
+func (fs *BackupFs) Remove(name string) error {
+	err := fs.tryBackup(name)
+	if err != nil {
+		return err
+	}
+
+	return fs.base.Remove(name)
+}
+
+// RemoveAll removes a directory path and any children it contains. It
+// does not fail if the path does not exist (return nil).
+// not supported
+func (s *BackupFs) RemoveAll(path string) error {
 	return syscall.EPERM
 }
 
-// LstatIfPossible will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
-// Else it will call Stat.
-// In addtion to the FileInfo, it will return a boolean telling whether Lstat was called or not.
-func (s *BackupFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
-	if l, ok := s.base.(afero.Lstater); ok {
-		// implements interface
-		return l.LstatIfPossible(name)
+// Rename renames a file.
+func (fs *BackupFs) Rename(oldname, newname string) error {
+	// make target file known
+	err := fs.tryBackup(newname)
+	if err != nil {
+		return err
 	}
 
-	// does not implement lstat, fallback to stat
-	fi, err := s.base.Stat(name)
-	return fi, false, err
+	// there either was no previous file to be backed up
+	// but now we know that there was no file or there
+	// was a target file that has to be backed up which was then backed up
 
+	err = fs.tryBackup(oldname)
+	if err != nil {
+		return err
+	}
+
+	return fs.base.Rename(oldname, newname)
+}
+
+// Chmod changes the mode of the named file to mode.
+func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
+	err := fs.tryBackup(name)
+	if err != nil {
+		return err
+	}
+
+	return fs.base.Chmod(name, mode)
+}
+
+// Chown changes the uid and gid of the named file.
+func (fs *BackupFs) Chown(name string, uid, gid int) error {
+	err := fs.tryBackup(name)
+	if err != nil {
+		return err
+	}
+
+	return fs.base.Chown(name, uid, gid)
+}
+
+//Chtimes changes the access and modification times of the named file
+func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
+	err := fs.tryBackup(name)
+	if err != nil {
+		return err
+	}
+
+	return fs.base.Chtimes(name, atime, mtime)
 }
