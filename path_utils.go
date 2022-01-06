@@ -54,6 +54,7 @@ func removeStrings(lookupIn, applyTo string, remove ...string) (cleaned string, 
 }
 
 func iterateDirTree(name string, visitor func(string) error) error {
+	name = filepath.Clean(name)
 	slashName := filepath.ToSlash(name)
 
 	create := false
@@ -66,11 +67,11 @@ func iterateDirTree(name string, visitor func(string) error) error {
 
 		if r == '/' {
 			create = true
-			lastIndex = i - 1
+			lastIndex = i
 		}
 		if i == len(name)-1 {
 			create = true
-			lastIndex = i
+			lastIndex = i + 1
 		}
 
 		if create {
