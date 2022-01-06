@@ -6,24 +6,17 @@ package backupfs
 import (
 	"path/filepath"
 	"regexp"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 )
 
-func NewTestPrefixFs() *PrefixFs {
-	prefix, err := filepath.Abs("./tests/prefix")
-	if err != nil {
-		panic(err)
-	}
-	return NewPrefixFs(prefix, afero.NewOsFs())
-}
-
 func FuzzPrefixFs(f *testing.F) {
 
 	const fileName = "prefixfs_test.txt"
-	fs := NewTestPrefixFs()
+	fs := NewTestPrefixFs("/prefix")
 	for _, seed := range []string{".", "/", "..", "\\", fileName} {
 		f.Add(seed)
 	}
@@ -45,7 +38,6 @@ func FuzzPrefixFs(f *testing.F) {
 		outputPath := fs.prefixPath(input)
 		assert.Contains(outputPath, expectedPrefix)
 	})
-
 }
 
 func Test_removeStrings(t *testing.T) {
