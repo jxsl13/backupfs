@@ -8,6 +8,12 @@ import (
 	"github.com/spf13/afero"
 )
 
+// check for interface implementation
+var _ afero.Fs = (*PrefixFs)(nil)
+
+// NewPrefixFs creates a new file system abstraction that forces any path to be prepended with
+// the provided prefix.
+// the existence of the prefixPath existing is hidden away (errors might show full paths).
 func NewPrefixFs(prefixPath string, fs afero.Fs) *PrefixFs {
 	return &PrefixFs{
 		prefix: filepath.Clean(prefixPath),
@@ -15,11 +21,12 @@ func NewPrefixFs(prefixPath string, fs afero.Fs) *PrefixFs {
 	}
 }
 
+// PrefixFs, contrary to BasePathFs, does abstract away the existence of a base path.
+// The prefixed path is seen as the root directory.
 type PrefixFs struct {
 	prefix string
 	base   afero.Fs
 }
-
 
 func (s *PrefixFs) prefixPath(name string) string {
 	return filepath.Join(s.prefix, cleanPath(name))
@@ -28,7 +35,12 @@ func (s *PrefixFs) prefixPath(name string) string {
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
 func (s *PrefixFs) Create(name string) (File, error) {
-	return s.base.Create(s.prefixPath(name))
+	f, err := s.base.Create(s.prefixPath(name))
+	if f == nil {
+		return nil, err
+	}
+
+	return &PrefixFile{f: f, prefix: s.prefix}, nil
 }
 
 // Mkdir creates a directory in the filesystem, return an error if any
@@ -46,12 +58,22 @@ func (s *PrefixFs) MkdirAll(path string, perm os.FileMode) error {
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
 func (s *PrefixFs) Open(name string) (File, error) {
-	return s.base.Open(s.prefixPath(name))
+	f, err := s.base.Open(s.prefixPath(name))
+	if f == nil {
+		return nil, err
+	}
+
+	return &PrefixFile{f: f, prefix: s.prefix}, nil
 }
 
 // OpenFile opens a file using the given flags and the given mode.
 func (s *PrefixFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	return s.base.OpenFile(s.prefixPath(name), flag, perm)
+	f, err := s.base.OpenFile(s.prefixPath(name), flag, perm)
+	if f == nil {
+		return nil, err
+	}
+
+	return &PrefixFile{f: f, prefix: s.prefix}, nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
