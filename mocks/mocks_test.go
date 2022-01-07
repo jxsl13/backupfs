@@ -8,12 +8,11 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	"github.com/jxsl13/backupfs"
 	"github.com/jxsl13/backupfs/internal"
-	"github.com/jxsl13/backupfs/mocks"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 )
 
-func NewTestBackupFs(mockedBase mocks.Fs) (backupLayer, backupFs mocks.Fs) {
+func NewTestBackupFs(mockedBase Fs) (backupLayer, backupFs Fs) {
 	m := afero.NewMemMapFs()
 	backup := backupfs.NewPrefixFs("/backup", m)
 	return backup, backupfs.NewBackupFs(mockedBase, backup)
@@ -29,7 +28,7 @@ func TestMockFs(t *testing.T) {
 	)
 
 	// mocked base filesystem
-	mf := mocks.NewMockFs(mockCtrl)
+	mf := NewMockFs(mockCtrl)
 	mf.EXPECT().Stat(filePath).AnyTimes().Return(nil, expectedErr)
 
 	// backupfs contains a broken basefile system
