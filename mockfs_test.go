@@ -1,4 +1,4 @@
-package mocks_test
+package backupfs_test
 
 import (
 	"os"
