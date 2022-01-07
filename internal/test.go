@@ -7,9 +7,22 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/afero/mem"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sys/unix"
 )
+
+func CreateMemDir(path string, perm os.FileMode) os.FileInfo {
+	fd := mem.CreateDir(path)
+	mem.SetMode(fd, os.ModeDir|perm)
+	return mem.GetFileInfo(fd)
+}
+
+func CreateMemFile(path, content string, perm os.FileMode) afero.File {
+	fd := mem.CreateFile(path)
+	mem.SetMode(fd, perm)
+	return mem.NewFileHandle(fd)
+}
 
 func FileMustContainText(t *testing.T, fs afero.Fs, path, content string) {
 	assert := assert.New(t)
