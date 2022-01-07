@@ -1,10 +1,19 @@
+package mocks
+
+import (
+	os "os"
+	time "time"
+
+	"github.com/spf13/afero"
+)
+
 // Fs is the filesystem interface.
 //
 // Any simulated or real filesystem should implement this interface.
 type Fs interface {
 	// Create creates a file in the filesystem, returning the file and an
 	// error, if any happens.
-	Create(name string) (File, error)
+	Create(name string) (afero.File, error)
 
 	// Mkdir creates a directory in the filesystem, return an error if any
 	// happens.
@@ -15,10 +24,10 @@ type Fs interface {
 	MkdirAll(path string, perm os.FileMode) error
 
 	// Open opens a file, returning it or an error, if any happens.
-	Open(name string) (File, error)
+	Open(name string) (afero.File, error)
 
 	// OpenFile opens a file using the given flags and the given mode.
-	OpenFile(name string, flag int, perm os.FileMode) (File, error)
+	OpenFile(name string, flag int, perm os.FileMode) (afero.File, error)
 
 	// Remove removes a file identified by name, returning an error, if any
 	// happens.
