@@ -1,4 +1,4 @@
-package backupfs
+package internal
 
 import (
 	"io"
@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-func copyDir(fs afero.Fs, name string, info os.FileInfo) error {
+func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 	if !info.IsDir() {
 		panic("expecting a directory file-info")
 	}
@@ -44,7 +44,7 @@ func copyDir(fs afero.Fs, name string, info os.FileInfo) error {
 	return nil
 }
 
-func copyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File) error {
+func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File) error {
 	if info.IsDir() {
 		panic("expecting a file file-info")
 	}
@@ -87,7 +87,7 @@ func copyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 }
 
 // Check if a file or directory exists.
-func exists(fs afero.Fs, path string) (bool, error) {
+func Exists(fs afero.Fs, path string) (bool, error) {
 	_, err := fs.Stat(path)
 	if err == nil {
 		return true, nil

@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
 )
 
@@ -123,7 +124,7 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 	// file found at base fs location
 
 	// did we already backup that file?
-	foundBackup, err := exists(fs.backup, path)
+	foundBackup, err := internal.Exists(fs.backup, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -164,7 +165,7 @@ func (fs *BackupFs) tryBackup(name string) error {
 			return nil
 		}
 
-		return copyDir(fs.backup, subDirPath, fi)
+		return internal.CopyDir(fs.backup, subDirPath, fi)
 	})
 	if err != nil {
 		return err
@@ -182,7 +183,7 @@ func (fs *BackupFs) tryBackup(name string) error {
 		return err
 	}
 	defer sf.Close()
-	return copyFile(fs.backup, name, info, sf)
+	return internal.CopyFile(fs.backup, name, info, sf)
 }
 
 // Create creates a file in the filesystem, returning the file and an

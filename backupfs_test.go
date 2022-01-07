@@ -1,14 +1,10 @@
 package backupfs
 
 import (
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 
-	"golang.org/x/sys/unix"
-
+	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 )
@@ -51,96 +47,6 @@ func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup, backu
 	return root, base, backup, backupFs
 }
 
-func fileMustContainText(t *testing.T, fs afero.Fs, path, content string) {
-	assert := assert.New(t)
-	f, err := fs.Open(path)
-	assert.NoError(err)
-	defer f.Close()
-	b, err := ioutil.ReadAll(f)
-	assert.NoError(err)
-
-	assert.Equal(string(b), content)
-}
-
-func mustNotExist(t *testing.T, fs afero.Fs, path string) {
-	assert := assert.New(t)
-	found, err := exists(fs, path)
-	assert.NoError(err)
-	assert.False(found, "found file path but should not exist: "+path)
-}
-
-func mustExist(t *testing.T, fs afero.Fs, path string) {
-	assert := assert.New(t)
-	found, err := exists(fs, path)
-	assert.NoError(err)
-	assert.True(found, "found file path but should exist: "+path)
-}
-
-func removeFile(t *testing.T, fs afero.Fs, path string) {
-	assert := assert.New(t)
-
-	err := fs.Remove(path)
-	assert.NoError(err)
-}
-
-func createFile(t *testing.T, fs afero.Fs, path, content string) {
-	assert := assert.New(t)
-
-	dirPath := filepath.Dir(path)
-	found, err := exists(fs, dirPath)
-	assert.NoError(err)
-
-	if !found {
-		err = fs.MkdirAll(dirPath, 0755)
-		assert.NoError(err)
-	}
-
-	f, err := fs.Create(path)
-	assert.NoError(err)
-	defer func(file afero.File) {
-		err := f.Close()
-		assert.NoError(err)
-	}(f)
-	ret, err := f.WriteString(content)
-	assert.NoError(err)
-	assert.Equal(ret, len(content))
-}
-
-var umaskVal = (*uint32)(nil)
-
-func umask() uint32 {
-	if umaskVal == nil {
-		umaskValue := uint32(unix.Umask(0))
-		_ = unix.Umask(int(umaskValue))
-		umaskVal = &umaskValue
-	}
-	return *umaskVal
-}
-
-func openFile(t *testing.T, fs afero.Fs, path, content string, perm os.FileMode) {
-	assert := assert.New(t)
-
-	dirPath := filepath.Dir(path)
-	found, err := exists(fs, dirPath)
-	assert.NoError(err)
-
-	if !found {
-		err = fs.MkdirAll(dirPath, 0755)
-		assert.NoError(err)
-	}
-
-	f, err := fs.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, perm)
-	assert.NoError(err)
-	defer func(file afero.File) {
-		err := f.Close()
-		assert.NoError(err)
-	}(f)
-	ret, err := f.WriteString(content)
-	assert.NoError(err)
-	assert.Equal(ret, len(content))
-
-}
-
 func TestBackupFsCreate(t *testing.T) {
 	ResetTestMemMapFs()
 
@@ -156,26 +62,26 @@ func TestBackupFsCreate(t *testing.T) {
 		fileContentOverwritten      = fileContent + "_overwritten"
 		fileContentOverwrittenAgain = fileContentOverwritten + "_again"
 	)
-	createFile(t, base, filePath, fileContent)
+	internal.CreateFile(t, base, filePath, fileContent)
 
-	createFile(t, backupFs, filePath, fileContentOverwritten)
+	internal.CreateFile(t, backupFs, filePath, fileContentOverwritten)
 
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwritten)
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	internal.FileMustContainText(t, root, "base"+filePath, fileContentOverwritten)
+	internal.FileMustContainText(t, root, "backup"+filePath, fileContent)
 
-	createFile(t, backupFs, filePath, fileContentOverwrittenAgain)
-	fileMustContainText(t, backupFs, filePath, fileContentOverwrittenAgain)
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
+	internal.CreateFile(t, backupFs, filePath, fileContentOverwrittenAgain)
+	internal.FileMustContainText(t, backupFs, filePath, fileContentOverwrittenAgain)
+	internal.FileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
 	// the backed up file should still have the same state as the first initial file
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	internal.FileMustContainText(t, root, "backup"+filePath, fileContent)
 
 	var (
 		newFilePath = "/test/02/test_02.txt"
 	)
 
-	createFile(t, backupFs, newFilePath, fileContent)
-	fileMustContainText(t, root, "base"+newFilePath, fileContent)
-	mustNotExist(t, root, "backup"+newFilePath)
+	internal.CreateFile(t, backupFs, newFilePath, fileContent)
+	internal.FileMustContainText(t, root, "base"+newFilePath, fileContent)
+	internal.MustNotExist(t, root, "backup"+newFilePath)
 }
 
 func TestBackupFsName(t *testing.T) {
@@ -202,26 +108,26 @@ func TestBackupFsOpenFile(t *testing.T) {
 		fileContentOverwritten      = fileContent + "_overwritten"
 		fileContentOverwrittenAgain = fileContentOverwritten + "_again"
 	)
-	openFile(t, base, filePath, fileContent, 0755)
+	internal.OpenFile(t, base, filePath, fileContent, 0755)
 
-	openFile(t, backupFs, filePath, fileContentOverwritten, 1755)
+	internal.OpenFile(t, backupFs, filePath, fileContentOverwritten, 1755)
 
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwritten)
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	internal.FileMustContainText(t, root, "base"+filePath, fileContentOverwritten)
+	internal.FileMustContainText(t, root, "backup"+filePath, fileContent)
 
-	openFile(t, backupFs, filePath, fileContentOverwrittenAgain, 0766)
-	fileMustContainText(t, backupFs, filePath, fileContentOverwrittenAgain)
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
+	internal.OpenFile(t, backupFs, filePath, fileContentOverwrittenAgain, 0766)
+	internal.FileMustContainText(t, backupFs, filePath, fileContentOverwrittenAgain)
+	internal.FileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
 	// the backed up file should still have the same state as the first initial file
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	internal.FileMustContainText(t, root, "backup"+filePath, fileContent)
 
 	var (
 		newFilePath = "/test/02/test_02.txt"
 	)
 
-	openFile(t, backupFs, newFilePath, fileContent, 0755)
-	fileMustContainText(t, root, "base"+newFilePath, fileContent)
-	mustNotExist(t, root, "backup"+newFilePath)
+	internal.OpenFile(t, backupFs, newFilePath, fileContent, 0755)
+	internal.FileMustContainText(t, root, "base"+newFilePath, fileContent)
+	internal.MustNotExist(t, root, "backup"+newFilePath)
 }
 
 func TestBackupFsRemove(t *testing.T) {
@@ -237,17 +143,17 @@ func TestBackupFsRemove(t *testing.T) {
 		filePath    = "/test/01/test_01.txt"
 		fileContent = "test_content"
 	)
-	createFile(t, base, filePath, fileContent)
-	fileMustContainText(t, root, "base"+filePath, fileContent)
+	internal.CreateFile(t, base, filePath, fileContent)
+	internal.FileMustContainText(t, root, "base"+filePath, fileContent)
 
-	removeFile(t, backupFs, filePath)
-	mustNotExist(t, backupFs, filePath)
+	internal.RemoveFile(t, backupFs, filePath)
+	internal.MustNotExist(t, backupFs, filePath)
 
-	mustNotExist(t, base, filePath)
-	mustNotExist(t, root, "base"+filePath)
+	internal.MustNotExist(t, base, filePath)
+	internal.MustNotExist(t, root, "base"+filePath)
 
-	mustExist(t, backup, filePath)
-	mustExist(t, root, "backup"+filePath)
+	internal.MustExist(t, backup, filePath)
+	internal.MustExist(t, root, "backup"+filePath)
 }
 
 func TestBackupFsRename(t *testing.T) {
@@ -268,27 +174,27 @@ func TestBackupFsRename(t *testing.T) {
 
 	err := base.MkdirAll(oldDirName, 0755)
 	assert.NoError(err)
-	mustExist(t, root, "base"+oldDirName)
+	internal.MustExist(t, root, "base"+oldDirName)
 
 	err = backupFs.Rename(oldDirName, newDirName)
 	assert.NoError(err)
 
-	mustNotExist(t, backupFs, oldDirName)
-	mustExist(t, backupFs, newDirName)
+	internal.MustNotExist(t, backupFs, oldDirName)
+	internal.MustExist(t, backupFs, newDirName)
 
-	mustNotExist(t, base, oldDirName)
-	mustExist(t, base, newDirName)
+	internal.MustNotExist(t, base, oldDirName)
+	internal.MustExist(t, base, newDirName)
 
-	mustNotExist(t, backup, newDirName)
-	mustExist(t, backup, oldDirName)
+	internal.MustNotExist(t, backup, newDirName)
+	internal.MustExist(t, backup, oldDirName)
 
 	err = backupFs.Rename(newDirName, newerDirName)
 	assert.NoError(err)
 
-	mustNotExist(t, backupFs, newDirName)
-	mustExist(t, backupFs, newerDirName)
+	internal.MustNotExist(t, backupFs, newDirName)
+	internal.MustExist(t, backupFs, newerDirName)
 
-	mustExist(t, backup, oldDirName)
-	mustNotExist(t, backup, newDirName)
-	mustNotExist(t, backup, newerDirName)
+	internal.MustExist(t, backup, oldDirName)
+	internal.MustNotExist(t, backup, newDirName)
+	internal.MustNotExist(t, backup, newerDirName)
 }
