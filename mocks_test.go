@@ -3,6 +3,7 @@ package backupfs_test
 import (
 	"errors"
 	"os"
+	"syscall"
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
@@ -72,7 +73,7 @@ func TestMockFsMkdir(t *testing.T) {
 		{
 			"/test/01/mock",
 			internal.CreateMemDir("/test/01/mock", 0755),
-			os.ErrNotExist,
+			syscall.ENOENT,
 		},
 	}
 
