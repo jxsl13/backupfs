@@ -17,7 +17,7 @@ func NewTestBackupFs(mockedBase Fs) (backupLayer, backupFs Fs) {
 	backup := backupfs.NewPrefixFs("/backup", m)
 	return backup, backupfs.NewBackupFs(mockedBase, backup)
 }
-func TestMockFs(t *testing.T) {
+func TestMockFsStat(t *testing.T) {
 	assert := assert.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
