@@ -57,8 +57,6 @@ func fileMustNotExist(t *testing.T, fs afero.Fs, path string) {
 	assert.False(found, "found file path but should not exist: "+path)
 }
 
-
-
 func createFile(t *testing.T, fs afero.Fs, path, content string) {
 	assert := assert.New(t)
 
@@ -73,10 +71,10 @@ func createFile(t *testing.T, fs afero.Fs, path, content string) {
 
 	f, err := fs.Create(path)
 	assert.NoError(err)
-	defer func() {
+	defer func(file afero.File) {
 		err := f.Close()
 		assert.NoError(err)
-	}()
+	}(f)
 	ret, err := f.WriteString(content)
 	assert.NoError(err)
 	assert.Equal(ret, len(content))
@@ -91,7 +89,7 @@ func TestBackupFsCreate(t *testing.T) {
 
 	var (
 		filePath                    = "/test/01/test_01.txt"
-		fileContent                 = "test_01"
+		fileContent                 = "test_content"
 		fileContentOverwritten      = fileContent + "_overwritten"
 		fileContentOverwrittenAgain = fileContentOverwritten + "_again"
 	)
@@ -104,6 +102,13 @@ func TestBackupFsCreate(t *testing.T) {
 
 	createFile(t, backupFs, filePath, fileContentOverwrittenAgain)
 	fileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
-	// the backed up file should still have the sam estate as the first initial file
+	// the backed up file should still have the same state as the first initial file
 	fileMustContainText(t, root, "backup"+filePath, fileContent)
+
+	var (
+		newFilePath = "/test/02/test_02.txt"
+	)
+
+	createFile(t, backupFs, newFilePath, fileContent)
+	fileMustNotExist(t, root, "backup"+newFilePath)
 }

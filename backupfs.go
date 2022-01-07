@@ -101,12 +101,16 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 	fs.mu.Lock()
 	info, found := fs.baseInfos[path]
 	if !found {
+		defer fs.mu.Unlock()
 		// fill fs.baseInfos
 		info, err = fs.stat(path)
-		if err != nil {
-			fs.mu.Unlock()
-			return nil, false, err
+		if err == nil {
+			return info, true, nil
 		}
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
 	fs.mu.Unlock()
 
