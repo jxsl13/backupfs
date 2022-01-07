@@ -1,7 +1,7 @@
 
 
 test:
-	gotip test -timeout 30s -run ^Test.+ github.com/jxsl13/backupfs
+	go test -timeout 30s ./...
 
 
 fuzz:
