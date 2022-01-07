@@ -225,18 +225,13 @@ func (fs *BackupFs) Open(name string) (File, error) {
 
 // OpenFile opens a file using the given flags and the given mode.
 func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	fi, err := fs.Stat(name)
-	if err != nil {
-		return nil, err
-	}
-
-	oldPerm := fi.Mode().Perm()
-	if flag == os.O_RDONLY && oldPerm == perm {
-		return fs.base.OpenFile(name, os.O_RDONLY, oldPerm)
+	if flag == os.O_RDONLY {
+		// in read only mode the perm is not used.
+		return fs.base.OpenFile(name, os.O_RDONLY, 0)
 	}
 
 	// not read only opening -> backup
-	err = fs.tryBackup(name)
+	err := fs.tryBackup(name)
 	if err != nil {
 		return nil, err
 	}

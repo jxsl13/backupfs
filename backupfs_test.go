@@ -110,5 +110,6 @@ func TestBackupFsCreate(t *testing.T) {
 	)
 
 	createFile(t, backupFs, newFilePath, fileContent)
+	fileMustContainText(t, root, "base"+newFilePath, fileContent)
 	fileMustNotExist(t, root, "backup"+newFilePath)
 }
