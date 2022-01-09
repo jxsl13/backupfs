@@ -4,6 +4,8 @@
 package backupfs
 
 import (
+	"errors"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -31,9 +33,9 @@ func FuzzPrefixFs(f *testing.F) {
 		fs := NewTestPrefixFs(prefix)
 
 		s, err := fs.prefixPath(input)
-
 		if !strings.HasPrefix(s, prefix) {
 			assert.Error(err)
+			assert.True(errors.Is(err, os.ErrNotExist), "expecting returned error to be of type os.ErrNotExist")
 			return
 		}
 
