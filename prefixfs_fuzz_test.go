@@ -1,11 +1,11 @@
 //go:build go1.18
-// +build go1.18
+//+build go1.18
 
 package backupfs
 
 import (
-	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,26 +13,42 @@ import (
 
 func FuzzPrefixFs(f *testing.F) {
 
-	expectedPrefix, err := filepath.Abs("./tests/prefix")
-	if err != nil {
-		f.Fatal(err)
-	}
-
-	const fileName = "prefixfs_test.txt"
-	fs := NewTestPrefixFs(expectedPrefix)
+	const (
+		prefix   = "/some/test/prefix/01/test/02"
+		fileName = "prefixfs_test.txt"
+	)
 	for _, seed := range []string{".", "/", "..", "\\", fileName} {
 		f.Add(seed)
 	}
 
-	filenameRegex := regexp.MustCompile(`[^\d]` + fileName)
+	filenameRegex := regexp.MustCompile(`^[^\d]`)
 
 	f.Fuzz(func(t *testing.T, input string) {
-		if !filenameRegex.MatchString(input) {
+		if !filenameRegex.MatchString(input) || len(input) > 256 {
+			return
+		}
+		assert := assert.New(t)
+		fs := NewTestPrefixFs(prefix)
+
+		s, err := fs.prefixPath(input)
+
+		if !strings.HasPrefix(s, prefix) {
+			assert.Error(err)
 			return
 		}
 
-		assert := assert.New(t)
-		outputPath := fs.prefixPath(input)
-		assert.Contains(outputPath, expectedPrefix)
+		// no error -> we can create a valid file
+		assert.NoError(err)
+
+		f, err := fs.Create(input)
+		assert.NoError(err)
+		defer func() {
+			err := f.Close()
+			assert.NoError(err)
+		}()
+
+		// prefix file must not have any prefix, assert that prefix is hidden.
+		assert.False(strings.HasPrefix(f.Name(), prefix))
+
 	})
 }
