@@ -1,4 +1,4 @@
-# backupfs & prefixfs
+# backupfs
 
 (both filesystem abstractions implement the spf13/afero interfaces)
 
@@ -14,17 +14,16 @@ Any attempt to modify a file in the base filesystem leads to the file being back
 
 Consecutive file modifications are ignored as the file has already been backed up.
 
-## Fuzzing (beta)
-
-[https://go.dev/blog/fuzz-beta](https://go.dev/blog/fuzz-beta)
-
 Example
 ```go
+package main
+
 import (
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/jxsl13/backupfs"
 	"github.com/spf13/afero"
 )
 
@@ -35,7 +34,7 @@ func checkErr(err error) {
 	}
 }
 
-func ExampleBackupFs() {
+func main() {
 
 	var (
 		// base filesystem
@@ -54,10 +53,10 @@ func ExampleBackupFs() {
 	var (
 		// sub directory in base filesystem as backup directory
 		// where the backups should be stored
-		backup = NewPrefixFs("/var/opt/application/backup", baseFs)
+		backup = backupfs.NewPrefixFs("/var/opt/application/backup", baseFs)
 
 		// backup on write filesystem
-		backupFs = NewBackupFs(baseFs, backup)
+		backupFs = backupfs.NewBackupFs(baseFs, backup)
 	)
 
 	// we try to override a file in the base filesystem
@@ -87,8 +86,16 @@ func ExampleBackupFs() {
 
 	overwrittenFileContent := string(b)
 
-	fmt.Println("Overwritten file content: ", overwrittenFileContent)
-	fmt.Println("Backed up file content  : ", backedupContent)
+	fmt.Println("Overwritten file: ", overwrittenFileContent)
+	fmt.Println("Backed up file  : ", backedupContent)
+
+	afs := afero.Afero{Fs: backupFs}
+	fi, err := afs.ReadDir("/var/opt/")
+	checkErr(err)
+
+	for _, f := range fi {
+		fmt.Println("Found name: ", f.Name())
+	}
 
 }
 ```
