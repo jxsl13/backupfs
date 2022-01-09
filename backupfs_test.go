@@ -16,10 +16,6 @@ var (
 )
 
 func NewTestMemMapFs() afero.Fs {
-	if mm != nil {
-		return mm
-	}
-
 	mo.Do(func() {
 		resetMu.Lock()
 		defer resetMu.Unlock()
