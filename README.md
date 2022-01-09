@@ -19,7 +19,7 @@ Consecutive file modifications are ignored as the file has already been backed u
 [https://go.dev/blog/fuzz-beta](https://go.dev/blog/fuzz-beta)
 
 Example
-```
+```go
 import (
 	"fmt"
 	"io"
