@@ -87,8 +87,8 @@ func ExampleBackupFs() {
 
 	overwrittenFileContent := string(b)
 
-	fmt.Println("Overwritten file: ", overwrittenFileContent)
-	fmt.Println("Backed up file  : ", backedupContent)
+	fmt.Println("Overwritten file content: ", overwrittenFileContent)
+	fmt.Println("Backed up file content  : ", backedupContent)
 
 }
 ```
