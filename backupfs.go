@@ -139,7 +139,6 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 }
 
 func (fs *BackupFs) tryBackup(name string) error {
-	name = cleanPath(name)
 
 	info, needsBackup, err := fs.backupRequired(name)
 	if err != nil {
