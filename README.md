@@ -96,4 +96,3 @@ func ExampleBackupFs() {
 Small roadmap:
 
 - testing of the backup fs with memory mapped fs
-- some fuzzing would be interesting
