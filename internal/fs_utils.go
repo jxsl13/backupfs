@@ -3,10 +3,46 @@ package internal
 import (
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/afero"
 )
+
+func IterateDirTree(name string, visitor func(string) error) error {
+	name = filepath.Clean(name)
+	slashName := filepath.ToSlash(name)
+
+	create := false
+	lastIndex := 0
+	for i, r := range slashName {
+		if i == 0 && r == '/' {
+			continue
+		}
+		create = false
+
+		if r == '/' {
+			create = true
+			lastIndex = i
+		}
+		if i == len(name)-1 {
+			create = true
+			lastIndex = i + 1
+		}
+
+		if create {
+			// /path -> /path/subpath -> /path/subpath/subsubpath etc.
+			dirPath := name[:lastIndex]
+			err := visitor(dirPath)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
 
 func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 	if !info.IsDir() {
@@ -96,4 +132,16 @@ func Exists(fs afero.Fs, path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// ByStringLength sorts the string by th enumber of subdirectories
+type ByFilePathSeparators []string
+
+func (a ByFilePathSeparators) Len() int      { return len(a) }
+func (a ByFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByFilePathSeparators) Less(i, j int) bool {
+	ai := filepath.ToSlash(a[i])
+	aj := filepath.ToSlash(a[j])
+
+	return strings.Count(ai, "/") > strings.Count(aj, "/")
 }

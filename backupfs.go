@@ -1,8 +1,10 @@
 package backupfs
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -25,16 +27,19 @@ func NewBackupFs(base, backup afero.Fs) *BackupFs {
 		backup: backup,
 
 		// this map is needed in order to keep track of non existing files
-		// consecutive changes might lead to file sbeing backe dup
+		// consecutive changes might lead to files being backed up
 		// that were never there before
-		// but could have been written byus in the mean time.
-		// without this structure we would never know where there was actually
-		// no previous file to be backe dup.
+		// but could have been written by us in the mean time.
+		// without this structure we would never know whether there was actually
+		// no previous file to be backed up.
 		baseInfos: make(map[string]os.FileInfo),
 	}
 }
 
-//
+// BackupFs is a file system abstraction that takes two underlying filesystems.
+// One filesystem that is is being used to read and write files and a second filesystem
+// which is used as backup target in case that a file of the base filesystem is about to be
+// modified.
 type BackupFs struct {
 	// base filesystem which may be overwritten
 	base afero.Fs
@@ -54,7 +59,8 @@ func (fs *BackupFs) Name() string {
 	return "BackupFs"
 }
 
-// updates
+// keeps track of files in the base filesystem.
+// Files are saved only once, any consecutive update is ignored.
 func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
 	_, found := fs.baseInfos[path]
 	if !found {
@@ -62,8 +68,7 @@ func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
 	}
 }
 
-// Stat returns a FileInfo describing the named file, or an error, if any
-// happens.
+// Stat returns a FileInfo describing the named file, or an error, if any happens.
 // Stat only looks at the base filesystem and returns the stat of the files at the specified path
 func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
 	fs.mu.Lock()
@@ -98,6 +103,10 @@ func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
 	return fi, nil
 }
 
+// backupRequired checks whether a file that is about to be changed needs to be backed up.
+// files that do not exist in the backupFs need to be backed up.
+// files that do exist in the backupFs either as files or in the baseInfos map as non-existing files
+// do not  need to be backed up (again)
 func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool, err error) {
 	fs.mu.Lock()
 	info, found := fs.baseInfos[path]
@@ -154,7 +163,7 @@ func (fs *BackupFs) tryBackup(name string) error {
 		dirPath = filepath.Dir(dirPath)
 	}
 
-	err = iterateDirTree(dirPath, func(subDirPath string) error {
+	err = internal.IterateDirTree(dirPath, func(subDirPath string) error {
 		fi, required, err := fs.backupRequired(subDirPath)
 		if err != nil {
 			return err
@@ -253,8 +262,52 @@ func (fs *BackupFs) Remove(name string) error {
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
 // not supported
-func (s *BackupFs) RemoveAll(path string) error {
-	return syscall.EPERM
+func (s *BackupFs) RemoveAll(name string) error {
+	fi, err := s.Stat(name)
+	if err != nil {
+		return err
+	}
+
+	// if it's a file, directly remove it
+	if !fi.IsDir() {
+		return s.Remove(name)
+	}
+
+	directoryPaths := make([]string, 0, 1)
+
+	err = afero.Walk(s.base, name, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			// initially we want to delete all files before we delete all of the directories
+			// but we also want to keep track of all found directories in order not to walk the
+			// dir tree again.
+			directoryPaths = append(directoryPaths, path)
+			return nil
+		}
+
+		return s.Remove(path)
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// after deleting all of the files
+	//now we want to sort all of the file paths from the most
+	//nested file to the least nested file (count file path separators)
+	sort.Sort(internal.ByFilePathSeparators(directoryPaths))
+
+	for _, path := range directoryPaths {
+		err = s.Remove(path)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Rename renames a file.

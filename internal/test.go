@@ -56,6 +56,15 @@ func RemoveFile(t *testing.T, fs afero.Fs, path string) {
 	assert.NoError(err)
 }
 
+func RemoveAll(t *testing.T, fs afero.Fs, path string) {
+	assert := assert.New(t)
+
+	err := fs.RemoveAll(path)
+	assert.NoError(err)
+
+	assert.False(Exists(fs, path))
+}
+
 func CreateFile(t *testing.T, fs afero.Fs, path, content string) {
 	assert := assert.New(t)
 
@@ -111,5 +120,20 @@ func OpenFile(t *testing.T, fs afero.Fs, path, content string, perm os.FileMode)
 	ret, err := f.WriteString(content)
 	assert.NoError(err)
 	assert.Equal(ret, len(content))
+}
 
+func MkdirAll(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
+	assert := assert.New(t)
+	err := fs.MkdirAll(path, perm)
+	assert.NoError(err)
+
+	err = IterateDirTree(path, func(s string) error {
+		exists, err := Exists(fs, s)
+		if err != nil {
+			return err
+		}
+		assert.True(exists, "path not found but is expected to exist: ", s)
+		return nil
+	})
+	assert.NoError(err)
 }

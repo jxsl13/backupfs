@@ -152,6 +152,55 @@ func TestBackupFsRemove(t *testing.T) {
 	internal.MustExist(t, root, "backup"+filePath)
 }
 
+func TestBackupFsRemoveAll(t *testing.T) {
+	ResetTestMemMapFs()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot = "/test"
+		fileDir     = "/test/001"
+		fileDir2    = "/test/0/2"
+		fileContent = "test_content"
+	)
+
+	internal.MkdirAll(t, base, fileDir, 0755)
+	internal.MkdirAll(t, base, fileDir2, 0755)
+
+	internal.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
+	internal.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test03.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test04.txt", fileContent)
+
+	internal.RemoveAll(t, backupFs, fileDirRoot)
+
+	// deleted from base file system
+	internal.MustNotExist(t, base, fileDir+"/test01.txt")
+	internal.MustNotExist(t, base, fileDir+"/test02.txt")
+	internal.MustNotExist(t, base, fileDir2+"/test03.txt")
+	internal.MustNotExist(t, base, fileDir2+"/test04.txt")
+
+	internal.MustNotExist(t, base, fileDirRoot)
+	internal.MustNotExist(t, base, fileDir)
+	internal.MustNotExist(t, base, fileDir2)
+
+	// must exist in bakcup
+	internal.FileMustContainText(t, backup, fileDir+"/test01.txt", fileContent)
+	internal.FileMustContainText(t, backup, fileDir+"/test02.txt", fileContent)
+	internal.FileMustContainText(t, backup, fileDir2+"/test03.txt", fileContent)
+	internal.FileMustContainText(t, backup, fileDir2+"/test04.txt", fileContent)
+
+	internal.MustExist(t, backup, fileDir)
+	internal.MustExist(t, backup, fileDir2)
+
+}
+
 func TestBackupFsRename(t *testing.T) {
 	ResetTestMemMapFs()
 

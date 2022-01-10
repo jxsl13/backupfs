@@ -5,7 +5,7 @@
 This package provides two filesystem abstractions.
 A structure called `PrefixFs`. As the name already suggests, PrefixFS forces an file system to have a specific prefix.
 Any attempt to escape the prefix path by directory traversal should (TM) be prevented, forcing the application to stay within the designated prefix directory.
-
+Contrary to `BasePathFs` from **afero**, `PrefixFs` doe snot export its file implementation to the public.
 
 The second and more important part of this library is `BackupFs`.
 It is a filesystem anbstraction that consists of two parts.
