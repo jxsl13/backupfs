@@ -134,45 +134,11 @@ func (fs *BackupFs) Rollback() error {
 	sort.Strings(restoreFilePaths)
 
 	for _, filePath := range restoreFilePaths {
-		err := restoreFile(filePath, fs.baseInfos, fs.base, fs.backup)
+		err := internal.RestoreFile(filePath, fs.baseInfos[filePath], fs.base, fs.backup)
 		if err != nil {
 			// in this case it might make sense to retry the rollback
 			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 		}
-	}
-	return nil
-}
-
-func restoreFile(name string, baseInfos map[string]fs.FileInfo, base, backup afero.Fs) error {
-	f, err := backup.Open(name)
-	if err != nil {
-		// best effort, if backup was tempered with, we cannot restore the file.
-		return nil
-	}
-	defer f.Close()
-
-	fi, err := f.Stat()
-	if err != nil {
-		// best effort, see above
-		return nil
-	}
-
-	if fi.IsDir() {
-		// remove dir and create a file there
-		err = base.RemoveAll(name)
-		if err != nil {
-			// we failed to remove the directory
-			// supposedly we cannot restore the file, as the directory still exists
-			return nil
-		}
-	}
-
-	// move file back to base system
-	err = internal.CopyFile(base, name, baseInfos[name], f)
-	if err != nil {
-		// failed to restore file
-		// critical error, most likely due to network problems
-		return err
 	}
 	return nil
 }
