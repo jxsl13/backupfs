@@ -9,3 +9,7 @@ coverage:
 
 fuzz:
 	gotip test -fuzz=Fuzz
+
+
+fmt:
+	go fmt ./...
