@@ -68,17 +68,11 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 		// TODO: do we want to fail here?
 		return err
 	}
-
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		uid := int(stat.Uid)
-		gid := int(stat.Gid)
-
-		err = fs.Chown(name, uid, gid)
-		if err != nil {
-			// TODO: do we want to fail here?
-			return err
-		}
+	err = Chown(info, name, fs)
+	if err != nil {
+		return err
 	}
+
 	return nil
 }
 

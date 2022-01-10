@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/afero/mem"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 )
 
 func CreateMemDir(path string, perm os.FileMode) os.FileInfo {
@@ -86,17 +85,6 @@ func CreateFile(t *testing.T, fs afero.Fs, path, content string) {
 	ret, err := f.WriteString(content)
 	require.NoError(err)
 	require.Equal(ret, len(content))
-}
-
-var umaskVal = (*uint32)(nil)
-
-func Umask() uint32 {
-	if umaskVal == nil {
-		umaskValue := uint32(unix.Umask(0))
-		_ = unix.Umask(int(umaskValue))
-		umaskVal = &umaskValue
-	}
-	return *umaskVal
 }
 
 func OpenFile(t *testing.T, fs afero.Fs, path, content string, perm os.FileMode) {
