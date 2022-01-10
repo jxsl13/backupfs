@@ -166,21 +166,13 @@ func (fs *BackupFs) MarshalJSON() ([]byte, error) {
 			continue
 		}
 
-		uid := -1
-		gid := -1
-
-		if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
-			uid = int(stat.Uid)
-			gid = int(stat.Gid)
-		}
-
 		fiMap[path] = &fInfo{
 			Name:    path,
 			Mode:    uint32(fi.Mode()),
 			ModTime: fi.ModTime().UnixNano(),
 			IsDir:   fi.IsDir(),
-			Uid:     uid,
-			Gid:     gid,
+			Uid:     internal.Uid(fi),
+			Gid:     internal.Gid(fi),
 		}
 	}
 
