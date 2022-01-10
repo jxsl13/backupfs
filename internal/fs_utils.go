@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/afero"
 )
@@ -106,16 +105,23 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 	if err != nil {
 		return err
 	}
+	err = Chown(info, name, fs)
 
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		uid := int(stat.Uid)
-		gid := int(stat.Gid)
-
-		err = fs.Chown(name, uid, gid)
-		if err != nil {
-			return err
-		}
+	if err != nil {
+		return err
 	}
+
+	return nil
+}
+
+// Chown is an operating system dependent implementation.
+func Chown(from fs.FileInfo, toName string, fs afero.Fs) error {
+
+	err := fs.Chown(toName, Uid(from), Gid(from))
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
