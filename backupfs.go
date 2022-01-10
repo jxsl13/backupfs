@@ -131,7 +131,7 @@ func (fs *BackupFs) Rollback() error {
 
 	// in this case it does not matter whether we sort the file paths or not
 	// we prefer to sort it in order to see potential errors better
-	sort.Strings(restoreDirPaths)
+	sort.Strings(restoreFilePaths)
 
 	for _, filePath := range restoreFilePaths {
 		err := restoreFile(filePath, fs.baseInfos, fs.base, fs.backup)
@@ -168,7 +168,7 @@ func restoreFile(name string, baseInfos map[string]fs.FileInfo, base, backup afe
 	}
 
 	// move file back to base system
-	err = internal.CopyFile(backup, name, baseInfos[name], f)
+	err = internal.CopyFile(base, name, baseInfos[name], f)
 	if err != nil {
 		// failed to restore file
 		// critical error, most likely due to network problems

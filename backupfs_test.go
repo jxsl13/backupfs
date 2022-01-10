@@ -305,8 +305,10 @@ func TestBackupFsRollback(t *testing.T) {
 	internal.MustNotExist(t, backup, "/test/001/subdir_new")
 	internal.MustNotExist(t, backup, "/test/001/subdir_new/test06_new.txt")
 
+	// ROLLBACK
 	err := backupFs.Rollback()
 	require.NoError(err)
+	// ROLLBACK
 
 	// previously deleted files must have been restored
 	internal.MustExist(t, backupFs, fileDir)
