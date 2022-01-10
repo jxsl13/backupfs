@@ -1,6 +1,8 @@
 package backupfs
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,7 +16,13 @@ import (
 )
 
 // assert interface implemented
-var _ afero.Fs = (*BackupFs)(nil)
+var (
+	_ afero.Fs = (*BackupFs)(nil)
+
+	// ErrRollbackFailed is returned when the rollback fails due to e.g. network problems.
+	// when this error is returned it might make sense to retry the rollback
+	ErrRollbackFailed = errors.New("rollback failed")
+)
 
 // File is implemented by the imported directory.
 type File = afero.File
@@ -57,6 +65,116 @@ type BackupFs struct {
 // The name of this FileSystem
 func (fs *BackupFs) Name() string {
 	return "BackupFs"
+}
+
+// Rollback tries to rollback the backup back to the
+// base system removing any new files for the base
+// system and restoring any old files from the backup
+// Best effort, any errors due to filesystem
+// modification on the backup site are skipped
+// This is a heavy weight operation which blocks the file system
+// until the rollback is done.
+func (fs *BackupFs) Rollback() error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	// these file sneed to be removed in a certain order, so we keep track of them
+	// from most nested to least nested files
+	removeBaseFiles := make([]string, 0, 1)
+
+	// these files also need to be restored in a certain order
+	// from least nested to most nested
+	restoreDirPaths := make([]string, 0, 4)
+	restoreFilePaths := make([]string, 0, 4)
+
+	for path, info := range fs.baseInfos {
+		if info == nil {
+			// file did not exist in the base filesystem at the point of
+			// filesystem modification.
+			exists, err := internal.Exists(fs.base, path)
+			if err == nil && exists {
+				// we will need to delete this file
+				removeBaseFiles = append(removeBaseFiles, path)
+			}
+
+			// case where file must be removed in base file system
+			// finished
+			continue
+		}
+
+		// file did exist in base filesystem, so we need to restore it from the backup
+		if info.IsDir() {
+			restoreDirPaths = append(restoreDirPaths, path)
+		} else {
+			restoreFilePaths = append(restoreFilePaths, path)
+		}
+	}
+
+	// remove files from most nested to least nested
+	sort.Sort(internal.ByMostFilePathSeparators(removeBaseFiles))
+	for _, remPath := range removeBaseFiles {
+		// remove all files that were not ther ebefor ethe backup.
+		// ignore error, as this is a best effort restoration.
+		_ = fs.base.Remove(remPath)
+	}
+
+	// in order to iterate over parent directories before child directories
+	sort.Sort(internal.ByLeastFilePathSeparators(restoreDirPaths))
+
+	for _, dirPath := range restoreDirPaths {
+		// backup -> base filesystem
+		err := internal.CopyDir(fs.base, dirPath, fs.baseInfos[dirPath])
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
+		}
+	}
+
+	// in this case it does not matter whether we sort the file paths or not
+	// we prefer to sort it in order to see potential errors better
+	sort.Strings(restoreDirPaths)
+
+	for _, filePath := range restoreFilePaths {
+		err := restoreFile(filePath, fs.baseInfos, fs.base, fs.backup)
+		if err != nil {
+			// in this case it might make sense to retry the rollback
+			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
+		}
+	}
+	return nil
+}
+
+func restoreFile(name string, baseInfos map[string]fs.FileInfo, base, backup afero.Fs) error {
+	f, err := backup.Open(name)
+	if err != nil {
+		// best effort, if backup was tempered with, we cannot restore the file.
+		return nil
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		// best effort, see above
+		return nil
+	}
+
+	if fi.IsDir() {
+		// remove dir and create a file there
+		err = base.RemoveAll(name)
+		if err != nil {
+			// we failed to remove the directory
+			// supposedly we cannot restore the file, as the directory still exists
+			return nil
+		}
+	}
+
+	// move file back to base system
+	err = internal.CopyFile(backup, name, baseInfos[name], f)
+	if err != nil {
+		// failed to restore file
+		// critical error, most likely due to network problems
+		return err
+	}
+	return nil
 }
 
 // keeps track of files in the base filesystem.
@@ -298,7 +416,7 @@ func (s *BackupFs) RemoveAll(name string) error {
 	// after deleting all of the files
 	//now we want to sort all of the file paths from the most
 	//nested file to the least nested file (count file path separators)
-	sort.Sort(internal.ByFilePathSeparators(directoryPaths))
+	sort.Sort(internal.ByMostFilePathSeparators(directoryPaths))
 
 	for _, path := range directoryPaths {
 		err = s.Remove(path)

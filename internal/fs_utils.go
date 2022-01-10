@@ -49,7 +49,8 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 		panic("expecting a directory file-info")
 	}
 
-	err := fs.Mkdir(name, info.Mode().Perm())
+	// try to create all dirs as somone might have tempered with the file system
+	err := fs.MkdirAll(name, info.Mode().Perm())
 	if err != nil {
 		return err
 	}
@@ -84,6 +85,7 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 	if info.IsDir() {
 		panic("expecting a file file-info")
 	}
+	// same as create but with custom permissions
 	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
 	if err != nil {
 		return err
@@ -134,14 +136,29 @@ func Exists(fs afero.Fs, path string) (bool, error) {
 	return false, err
 }
 
-// ByStringLength sorts the string by th enumber of subdirectories
-type ByFilePathSeparators []string
+// ByMostFilePathSeparators sorts the string by the number of file path separators
+// the more nested this is, the further at the beginning of the string slice the path will be
+type ByMostFilePathSeparators []string
 
-func (a ByFilePathSeparators) Len() int      { return len(a) }
-func (a ByFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a ByFilePathSeparators) Less(i, j int) bool {
+func (a ByMostFilePathSeparators) Len() int      { return len(a) }
+func (a ByMostFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByMostFilePathSeparators) Less(i, j int) bool {
 	ai := filepath.ToSlash(a[i])
 	aj := filepath.ToSlash(a[j])
 
 	return strings.Count(ai, "/") > strings.Count(aj, "/")
+}
+
+// ByLeastFilePathSeparators sorts the string by the number of file path separators
+// the least nested the file path is, the further at the beginning it will be of the
+// sorted string slice.
+type ByLeastFilePathSeparators []string
+
+func (a ByLeastFilePathSeparators) Len() int      { return len(a) }
+func (a ByLeastFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByLeastFilePathSeparators) Less(i, j int) bool {
+	ai := filepath.ToSlash(a[i])
+	aj := filepath.ToSlash(a[j])
+
+	return strings.Count(ai, "/") < strings.Count(aj, "/")
 }

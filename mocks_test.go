@@ -10,7 +10,7 @@ import (
 	"github.com/jxsl13/backupfs"
 	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func NewTestBackupFs(mockedBase Fs) (backupLayer, backupFs Fs) {
@@ -19,7 +19,7 @@ func NewTestBackupFs(mockedBase Fs) (backupLayer, backupFs Fs) {
 	return backup, backupfs.NewBackupFs(mockedBase, backup)
 }
 func TestMockFsStat(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -36,22 +36,22 @@ func TestMockFsStat(t *testing.T) {
 	backup, fs := NewTestBackupFs(mf)
 
 	_, err := fs.Create(filePath)
-	assert.Error(err)
-	assert.Equal(err, expectedErr)
+	require.Error(err)
+	require.Equal(err, expectedErr)
 
 	internal.MustNotExist(t, backup, filePath)
 
 	err = fs.Remove(filePath)
-	assert.Error(err)
-	assert.Equal(err, expectedErr)
+	require.Error(err)
+	require.Equal(err, expectedErr)
 
 	_, err = fs.OpenFile(filePath, os.O_RDWR, 0777)
-	assert.Error(err)
-	assert.Equal(err, expectedErr)
+	require.Error(err)
+	require.Equal(err, expectedErr)
 }
 
 func TestMockFsMkdir(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -95,7 +95,7 @@ func TestMockFsMkdir(t *testing.T) {
 
 	for _, d := range dirs {
 		err := fs.MkdirAll(d.Path, 0755)
-		assert.Equal(err, d.Error)
+		require.Equal(err, d.Error)
 		if err != nil {
 			internal.MustNotExist(t, backup, d.Path)
 		} else {

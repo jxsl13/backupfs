@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/afero/mem"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
@@ -25,67 +25,67 @@ func CreateMemFile(path, content string, perm os.FileMode) afero.File {
 }
 
 func FileMustContainText(t *testing.T, fs afero.Fs, path, content string) {
-	assert := assert.New(t)
+	require := require.New(t)
 	f, err := fs.Open(path)
-	assert.NoError(err)
+	require.NoError(err)
 	defer f.Close()
 	b, err := ioutil.ReadAll(f)
-	assert.NoError(err)
+	require.NoError(err)
 
-	assert.Equal(string(b), content)
+	require.Equal(string(b), content)
 }
 
 func MustNotExist(t *testing.T, fs afero.Fs, path string) {
-	assert := assert.New(t)
+	require := require.New(t)
 	found, err := Exists(fs, path)
-	assert.NoError(err)
-	assert.False(found, "found file path but should not exist: "+path)
+	require.NoError(err)
+	require.False(found, "found file path but should not exist: "+path)
 }
 
 func MustExist(t *testing.T, fs afero.Fs, path string) {
-	assert := assert.New(t)
+	require := require.New(t)
 	found, err := Exists(fs, path)
-	assert.NoError(err)
-	assert.True(found, "found file path but should exist: "+path)
+	require.NoError(err)
+	require.True(found, "file path not found but should exist: "+path)
 }
 
 func RemoveFile(t *testing.T, fs afero.Fs, path string) {
-	assert := assert.New(t)
+	require := require.New(t)
 
 	err := fs.Remove(path)
-	assert.NoError(err)
+	require.NoError(err)
 }
 
 func RemoveAll(t *testing.T, fs afero.Fs, path string) {
-	assert := assert.New(t)
+	require := require.New(t)
 
 	err := fs.RemoveAll(path)
-	assert.NoError(err)
+	require.NoError(err)
 
-	assert.False(Exists(fs, path))
+	MustNotExist(t, fs, path)
 }
 
 func CreateFile(t *testing.T, fs afero.Fs, path, content string) {
-	assert := assert.New(t)
+	require := require.New(t)
 
 	dirPath := filepath.Dir(path)
 	found, err := Exists(fs, dirPath)
-	assert.NoError(err)
+	require.NoError(err)
 
 	if !found {
 		err = fs.MkdirAll(dirPath, 0755)
-		assert.NoError(err)
+		require.NoError(err)
 	}
 
 	f, err := fs.Create(path)
-	assert.NoError(err)
+	require.NoError(err)
 	defer func(file afero.File) {
 		err := f.Close()
-		assert.NoError(err)
+		require.NoError(err)
 	}(f)
 	ret, err := f.WriteString(content)
-	assert.NoError(err)
-	assert.Equal(ret, len(content))
+	require.NoError(err)
+	require.Equal(ret, len(content))
 }
 
 var umaskVal = (*uint32)(nil)
@@ -100,40 +100,40 @@ func Umask() uint32 {
 }
 
 func OpenFile(t *testing.T, fs afero.Fs, path, content string, perm os.FileMode) {
-	assert := assert.New(t)
+	require := require.New(t)
 
 	dirPath := filepath.Dir(path)
 	found, err := Exists(fs, dirPath)
-	assert.NoError(err)
+	require.NoError(err)
 
 	if !found {
 		err = fs.MkdirAll(dirPath, 0755)
-		assert.NoError(err)
+		require.NoError(err)
 	}
 
 	f, err := fs.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, perm)
-	assert.NoError(err)
+	require.NoError(err)
 	defer func(file afero.File) {
 		err := f.Close()
-		assert.NoError(err)
+		require.NoError(err)
 	}(f)
 	ret, err := f.WriteString(content)
-	assert.NoError(err)
-	assert.Equal(ret, len(content))
+	require.NoError(err)
+	require.Equal(ret, len(content))
 }
 
 func MkdirAll(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
-	assert := assert.New(t)
+	require := require.New(t)
 	err := fs.MkdirAll(path, perm)
-	assert.NoError(err)
+	require.NoError(err)
 
 	err = IterateDirTree(path, func(s string) error {
 		exists, err := Exists(fs, s)
 		if err != nil {
 			return err
 		}
-		assert.True(exists, "path not found but is expected to exist: ", s)
+		require.True(exists, "path not found but is expected to exist: ", s)
 		return nil
 	})
-	assert.NoError(err)
+	require.NoError(err)
 }

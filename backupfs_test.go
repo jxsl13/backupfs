@@ -6,7 +6,7 @@ import (
 
 	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -35,7 +35,7 @@ func NewTestPrefixFs(prefix string) *PrefixFs {
 	return NewPrefixFs(prefix, NewTestMemMapFs())
 }
 
-func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup, backupFs afero.Fs) {
+func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup afero.Fs, backupFs *BackupFs) {
 	root = NewTestPrefixFs("/")
 	base = NewTestPrefixFs(basePrefix)
 	backup = NewTestPrefixFs(backupPrefix)
@@ -83,10 +83,10 @@ func TestBackupFsCreate(t *testing.T) {
 func TestBackupFsName(t *testing.T) {
 	ResetTestMemMapFs()
 
-	assert := assert.New(t)
+	require := require.New(t)
 	_, _, _, backupFs := NewTestBackupFs("/base", "/backup")
 
-	assert.Equal(backupFs.Name(), "BackupFs")
+	require.Equal(backupFs.Name(), "BackupFs")
 }
 
 func TestBackupFsOpenFile(t *testing.T) {
@@ -179,6 +179,7 @@ func TestBackupFsRemoveAll(t *testing.T) {
 	internal.CreateFile(t, base, fileDir2+"/test04.txt", fileContent)
 
 	internal.RemoveAll(t, backupFs, fileDirRoot)
+	internal.MustNotExist(t, backupFs, fileDirRoot)
 
 	// deleted from base file system
 	internal.MustNotExist(t, base, fileDir+"/test01.txt")
@@ -205,7 +206,7 @@ func TestBackupFsRename(t *testing.T) {
 	ResetTestMemMapFs()
 
 	var (
-		assert       = assert.New(t)
+		require      = require.New(t)
 		basePrefix   = "/base"
 		backupPrefix = "/backup"
 	)
@@ -218,11 +219,11 @@ func TestBackupFsRename(t *testing.T) {
 	)
 
 	err := base.MkdirAll(oldDirName, 0755)
-	assert.NoError(err)
+	require.NoError(err)
 	internal.MustExist(t, root, "base"+oldDirName)
 
 	err = backupFs.Rename(oldDirName, newDirName)
-	assert.NoError(err)
+	require.NoError(err)
 
 	internal.MustNotExist(t, backupFs, oldDirName)
 	internal.MustExist(t, backupFs, newDirName)
@@ -234,7 +235,7 @@ func TestBackupFsRename(t *testing.T) {
 	internal.MustExist(t, backup, oldDirName)
 
 	err = backupFs.Rename(newDirName, newerDirName)
-	assert.NoError(err)
+	require.NoError(err)
 
 	internal.MustNotExist(t, backupFs, newDirName)
 	internal.MustExist(t, backupFs, newerDirName)
@@ -242,4 +243,94 @@ func TestBackupFsRename(t *testing.T) {
 	internal.MustExist(t, backup, oldDirName)
 	internal.MustNotExist(t, backup, newDirName)
 	internal.MustNotExist(t, backup, newerDirName)
+}
+
+func TestBackupFsRollback(t *testing.T) {
+	ResetTestMemMapFs()
+
+	var (
+		require      = require.New(t)
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot    = "/test"
+		fileDir        = "/test/001"
+		fileDir2       = "/test/0/2"
+		fileContent    = "test_content"
+		fileContentNew = "test_content_new"
+	)
+
+	internal.MkdirAll(t, base, fileDir, 0755)
+	internal.MkdirAll(t, base, fileDir2, 0755)
+
+	internal.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
+	internal.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test03.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test04.txt", fileContent)
+
+	// delete directory & files that did exist before
+	internal.RemoveAll(t, backupFs, fileDir)
+
+	// removed files must not exist
+	internal.MustNotExist(t, base, fileDir)
+	internal.MustNotExist(t, base, fileDir+"/test01.txt")
+	internal.MustNotExist(t, base, fileDir+"/test02.txt")
+
+	internal.MustNotExist(t, backupFs, fileDir)
+	internal.MustNotExist(t, backupFs, fileDir+"/test01.txt")
+	internal.MustNotExist(t, backupFs, fileDir+"/test02.txt")
+
+	internal.MustExist(t, backup, fileDirRoot)
+	internal.MustExist(t, backup, fileDir)
+	internal.FileMustContainText(t, backup, fileDir+"/test01.txt", fileContent)
+	internal.FileMustContainText(t, backup, fileDir+"/test02.txt", fileContent)
+
+	// create files that did not exist before
+	internal.CreateFile(t, backupFs, fileDir2+"/test05_new.txt", fileContentNew)
+
+	// must not exist becaus eit's a new file that did not exist in the base fs before.
+	internal.MustNotExist(t, backup, fileDir2+"/test05_new.txt")
+
+	// create subdir of deleted directory which did not exist before
+	internal.MkdirAll(t, backupFs, "/test/001/subdir_new", 0755)
+	internal.CreateFile(t, backupFs, "/test/001/subdir_new/test06_new.txt", "fileContentNew")
+
+	// must also not exist becaus ethese are new files
+	internal.MustNotExist(t, backup, "/test/001/subdir_new")
+	internal.MustNotExist(t, backup, "/test/001/subdir_new/test06_new.txt")
+
+	err := backupFs.Rollback()
+	require.NoError(err)
+
+	// previously deleted files must have been restored
+	internal.MustExist(t, backupFs, fileDir)
+	internal.MustExist(t, backupFs, fileDir+"/test01.txt")
+	internal.MustExist(t, backupFs, fileDir+"/test02.txt")
+
+	// also restored in the underlying filesystem
+	internal.MustExist(t, base, fileDir)
+	internal.MustExist(t, base, fileDir+"/test01.txt")
+	internal.MustExist(t, base, fileDir+"/test02.txt")
+
+	// newly created files must have been deleted upon rollback
+	internal.MustNotExist(t, base, fileDir2+"/test05_new.txt")
+	internal.MustNotExist(t, backupFs, fileDir2+"/test05_new.txt")
+
+	// new files should have been deleted
+	internal.MustNotExist(t, base, "/test/001/subdir_new/test06_new.txt")
+	internal.MustNotExist(t, backupFs, "/test/001/subdir_new/test06_new.txt")
+
+	// new directories as well
+	internal.MustNotExist(t, base, "/test/001/subdir_new")
+	internal.MustNotExist(t, backupFs, "/test/001/subdir_new")
+
+	// but old directories that did exist before should still exist
+	internal.MustExist(t, base, "/test/001")
+	internal.MustExist(t, backupFs, "/test/001")
 }

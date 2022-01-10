@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func FuzzPrefixFs(f *testing.F) {
@@ -29,28 +29,28 @@ func FuzzPrefixFs(f *testing.F) {
 		if !filenameRegex.MatchString(input) || len(input) > 256 {
 			return
 		}
-		assert := assert.New(t)
+		require := require.New(t)
 		fs := NewTestPrefixFs(prefix)
 
 		s, err := fs.prefixPath(input)
 		if !strings.HasPrefix(s, prefix) {
-			assert.Error(err)
-			assert.True(errors.Is(err, os.ErrNotExist), "expecting returned error to be of type os.ErrNotExist")
+			require.Error(err)
+			require.True(errors.Is(err, os.ErrNotExist), "expecting returned error to be of type os.ErrNotExist")
 			return
 		}
 
 		// no error -> we can create a valid file
-		assert.NoError(err)
+		require.NoError(err)
 
 		f, err := fs.Create(input)
-		assert.NoError(err)
+		require.NoError(err)
 		defer func() {
 			err := f.Close()
-			assert.NoError(err)
+			require.NoError(err)
 		}()
 
-		// prefix file must not have any prefix, assert that prefix is hidden.
-		assert.False(strings.HasPrefix(f.Name(), prefix))
+		// prefix file must not have any prefix, require that prefix is hidden.
+		require.False(strings.HasPrefix(f.Name(), prefix))
 
 	})
 }
