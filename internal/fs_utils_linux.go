@@ -1,5 +1,12 @@
 package internal
 
+import (
+	"io/fs"
+	"syscall"
+
+	"github.com/spf13/afero"
+)
+
 func Chown(from fs.FileInfo, toName string, fs afero.Fs) error {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		uid := int(stat.Uid)
