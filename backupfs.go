@@ -1,6 +1,7 @@
 package backupfs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
+	"github.com/spf13/afero/mem"
 )
 
 // assert interface implemented
@@ -140,6 +142,93 @@ func (fs *BackupFs) Rollback() error {
 			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 		}
 	}
+	return nil
+}
+
+type fInfo struct {
+	Name    string `json:"name"`
+	Mode    uint32 `json:"mode"`
+	ModTime int64  `json:"mod_time"`
+	IsDir   bool   `json:"is_dir"`
+	Uid     int    `json:"uid"`
+	Gid     int    `json:"gid"`
+}
+
+func (fs *BackupFs) MarshalJSON() ([]byte, error) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	fiMap := make(map[string]*fInfo, len(fs.baseInfos))
+
+	for path, fi := range fs.baseInfos {
+		if fi == nil {
+			fiMap[path] = nil
+			continue
+		}
+
+		uid := -1
+		gid := -1
+
+		if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
+			uid = int(stat.Uid)
+			gid = int(stat.Gid)
+		}
+
+		fiMap[path] = &fInfo{
+			Name:    path,
+			Mode:    uint32(fi.Mode()),
+			ModTime: fi.ModTime().UnixNano(),
+			IsDir:   fi.IsDir(),
+			Uid:     uid,
+			Gid:     gid,
+		}
+	}
+
+	return json.Marshal(fiMap)
+}
+
+func (fs *BackupFs) UnmarshalJSON(data []byte) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	fiMap := make(map[string]*fInfo)
+
+	err := json.Unmarshal(data, &fiMap)
+	if err != nil {
+		return err
+	}
+
+	result := make(map[string]os.FileInfo, len(fiMap))
+
+	for path, fi := range fiMap {
+		if fi == nil {
+			result[path] = nil
+			continue
+		}
+
+		var memFile *mem.FileData
+
+		if fi.IsDir {
+			memFile = mem.CreateDir(fi.Name)
+		} else {
+			memFile = mem.CreateFile(fi.Name)
+		}
+
+		mem.SetMode(memFile, os.FileMode(fi.Mode))
+		mem.SetModTime(memFile, time.Unix(fi.ModTime/1000, fi.ModTime%1000))
+
+		if fi.Gid >= 0 {
+			mem.SetGID(memFile, fi.Gid)
+		}
+
+		if fi.Uid >= 0 {
+			mem.SetUID(memFile, fi.Uid)
+		}
+
+		result[path] = mem.GetFileInfo(memFile)
+	}
+
+	fs.baseInfos = result
 	return nil
 }
 

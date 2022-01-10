@@ -1,6 +1,7 @@
 package backupfs
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
 
@@ -335,4 +336,107 @@ func TestBackupFsRollback(t *testing.T) {
 	// but old directories that did exist before should still exist
 	internal.MustExist(t, base, "/test/001")
 	internal.MustExist(t, backupFs, "/test/001")
+}
+
+func TestBackupFsJSON(t *testing.T) {
+	ResetTestMemMapFs()
+
+	var (
+		require      = require.New(t)
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot    = "/test"
+		fileDir        = "/test/001"
+		fileDir2       = "/test/0/2"
+		fileContent    = "test_content"
+		fileContentNew = "test_content_new"
+	)
+
+	internal.MkdirAll(t, base, fileDir, 0755)
+	internal.MkdirAll(t, base, fileDir2, 0755)
+
+	internal.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
+	internal.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test03.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test04.txt", fileContent)
+
+	// delete directory & files that did exist before
+	internal.RemoveAll(t, backupFs, fileDir)
+
+	// removed files must not exist
+	internal.MustNotExist(t, base, fileDir)
+	internal.MustNotExist(t, base, fileDir+"/test01.txt")
+	internal.MustNotExist(t, base, fileDir+"/test02.txt")
+
+	internal.MustNotExist(t, backupFs, fileDir)
+	internal.MustNotExist(t, backupFs, fileDir+"/test01.txt")
+	internal.MustNotExist(t, backupFs, fileDir+"/test02.txt")
+
+	internal.MustExist(t, backup, fileDirRoot)
+	internal.MustExist(t, backup, fileDir)
+	internal.FileMustContainText(t, backup, fileDir+"/test01.txt", fileContent)
+	internal.FileMustContainText(t, backup, fileDir+"/test02.txt", fileContent)
+
+	// create files that did not exist before
+	internal.CreateFile(t, backupFs, fileDir2+"/test05_new.txt", fileContentNew)
+
+	// must not exist becaus eit's a new file that did not exist in the base fs before.
+	internal.MustNotExist(t, backup, fileDir2+"/test05_new.txt")
+
+	// create subdir of deleted directory which did not exist before
+	internal.MkdirAll(t, backupFs, "/test/001/subdir_new", 0755)
+	internal.CreateFile(t, backupFs, "/test/001/subdir_new/test06_new.txt", "fileContentNew")
+
+	// must also not exist becaus ethese are new files
+	internal.MustNotExist(t, backup, "/test/001/subdir_new")
+	internal.MustNotExist(t, backup, "/test/001/subdir_new/test06_new.txt")
+
+	// JSON
+	// after unmarshalling we should have the exact same behavior as without the marshaling/unmarshaling
+	data, err := json.Marshal(backupFs)
+	require.NoError(err)
+
+	err = json.Unmarshal(data, &backupFs)
+	require.NoError(err)
+
+	// JSON
+
+	// ROLLBACK
+	err = backupFs.Rollback()
+	require.NoError(err)
+	// ROLLBACK
+
+	// previously deleted files must have been restored
+	internal.MustExist(t, backupFs, fileDir)
+	internal.MustExist(t, backupFs, fileDir+"/test01.txt")
+	internal.MustExist(t, backupFs, fileDir+"/test02.txt")
+
+	// also restored in the underlying filesystem
+	internal.MustExist(t, base, fileDir)
+	internal.MustExist(t, base, fileDir+"/test01.txt")
+	internal.MustExist(t, base, fileDir+"/test02.txt")
+
+	// newly created files must have been deleted upon rollback
+	internal.MustNotExist(t, base, fileDir2+"/test05_new.txt")
+	internal.MustNotExist(t, backupFs, fileDir2+"/test05_new.txt")
+
+	// new files should have been deleted
+	internal.MustNotExist(t, base, "/test/001/subdir_new/test06_new.txt")
+	internal.MustNotExist(t, backupFs, "/test/001/subdir_new/test06_new.txt")
+
+	// new directories as well
+	internal.MustNotExist(t, base, "/test/001/subdir_new")
+	internal.MustNotExist(t, backupFs, "/test/001/subdir_new")
+
+	// but old directories that did exist before should still exist
+	internal.MustExist(t, base, "/test/001")
+	internal.MustExist(t, backupFs, "/test/001")
+
 }
