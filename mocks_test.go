@@ -82,7 +82,7 @@ func TestMockFsMkdir(t *testing.T) {
 	mf := NewMockFs(mockCtrl)
 	//proxyFs := afero.NewMemMapFs()
 	for _, d := range dirs {
-		mf.EXPECT().Stat(filepath.ToSlash(d.Path)).AnyTimes().Return(d.Info, d.Error)
+		mf.EXPECT().Stat(d.Path).AnyTimes().Return(d.Info, d.Error)
 		if d.Error == nil {
 			mf.EXPECT().MkdirAll(d.Path, gomock.Any()).Return(nil)
 		} else {
@@ -95,7 +95,7 @@ func TestMockFsMkdir(t *testing.T) {
 	backup, fs := NewTestBackupFs(mf)
 
 	for _, d := range dirs {
-		err := fs.MkdirAll(d.Path, 0755)
+		err := fs.MkdirAll(filepath.ToSlash(d.Path), 0755)
 		require.Equal(err, d.Error)
 		if err != nil {
 			internal.MustNotExist(t, backup, d.Path)
