@@ -142,6 +142,37 @@ func (fs *BackupFs) Rollback() error {
 			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 		}
 	}
+
+	// TODO: make this optional?: whether to delete the backup upon rollback
+
+	// at this point we were able to restore all of the files
+	// now we need to delete our backup
+
+	// delete all files first
+	for _, filePath := range restoreFilePaths {
+		// best effort deletion of backup files
+		// so we ignore the error
+		_ = fs.backup.Remove(filePath)
+	}
+
+	// we want to delete all of the backed up folders from
+	// the most nested child directories to the least nested parent directories.
+	sort.Sort(internal.ByMostFilePathSeparators(restoreDirPaths))
+
+	// delete all files first
+	for _, dirPath := range restoreDirPaths {
+		// best effort deletion of backup files
+		// so we ignore the error
+		// we only delete directories that we did create.
+		// any user created content in directories is not touched
+		_ = fs.backup.Remove(dirPath)
+	}
+
+	// at this point we have successfully restored our backup and
+	// removed all of the backup files and directories
+
+	// now we can reset the internal data structure for book keeping of filesystem modifications
+	fs.baseInfos = make(map[string]os.FileInfo)
 	return nil
 }
 
