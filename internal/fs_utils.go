@@ -12,12 +12,11 @@ import (
 
 func IterateDirTree(name string, visitor func(string) error) error {
 	name = filepath.Clean(name)
-	slashName := filepath.ToSlash(name)
 
 	create := false
 	lastIndex := 0
-	for i, r := range slashName {
-		if i == 0 && r == '/' {
+	for i, r := range name {
+		if i == 0 && r == filepath.Separator {
 			continue
 		}
 		create = false
@@ -177,6 +176,9 @@ func Exists(fs afero.Fs, path string) (bool, error) {
 	return false, err
 }
 
+// current OS filepath separator / or \
+const separator = string(filepath.Separator)
+
 // ByMostFilePathSeparators sorts the string by the number of file path separators
 // the more nested this is, the further at the beginning of the string slice the path will be
 type ByMostFilePathSeparators []string
@@ -184,10 +186,8 @@ type ByMostFilePathSeparators []string
 func (a ByMostFilePathSeparators) Len() int      { return len(a) }
 func (a ByMostFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a ByMostFilePathSeparators) Less(i, j int) bool {
-	ai := filepath.ToSlash(a[i])
-	aj := filepath.ToSlash(a[j])
 
-	return strings.Count(ai, "/") > strings.Count(aj, "/")
+	return strings.Count(a[i], separator) > strings.Count(a[j], separator)
 }
 
 // ByLeastFilePathSeparators sorts the string by the number of file path separators
@@ -198,8 +198,6 @@ type ByLeastFilePathSeparators []string
 func (a ByLeastFilePathSeparators) Len() int      { return len(a) }
 func (a ByLeastFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a ByLeastFilePathSeparators) Less(i, j int) bool {
-	ai := filepath.ToSlash(a[i])
-	aj := filepath.ToSlash(a[j])
 
-	return strings.Count(ai, "/") < strings.Count(aj, "/")
+	return strings.Count(a[i], separator) < strings.Count(a[j], separator)
 }

@@ -25,7 +25,7 @@ func TestMockFsStat(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	var (
-		filePath    = "/test/mock/01/test.txt"
+		filePath    = filepath.Clean("/test/mock/01/test.txt")
 		expectedErr = errors.New("unknown error")
 	)
 
@@ -62,17 +62,17 @@ func TestMockFsMkdir(t *testing.T) {
 		Error error
 	}{
 		{
-			"/test",
+			filepath.Clean("/test"),
 			internal.CreateMemDir("/test", 0755),
 			nil,
 		},
 		{
-			"/test/01",
+			filepath.Clean("/test/01"),
 			internal.CreateMemDir("/test/01", 0755),
 			nil,
 		},
 		{
-			"/test/01/mock",
+			filepath.Clean("/test/01/mock"),
 			internal.CreateMemDir("/test/01/mock", 0755),
 			syscall.ENOENT,
 		},
@@ -95,7 +95,7 @@ func TestMockFsMkdir(t *testing.T) {
 	backup, fs := NewTestBackupFs(mf)
 
 	for _, d := range dirs {
-		err := fs.MkdirAll(filepath.ToSlash(d.Path), 0755)
+		err := fs.MkdirAll(d.Path, 0755)
 		require.Equal(err, d.Error)
 		if err != nil {
 			internal.MustNotExist(t, backup, d.Path)

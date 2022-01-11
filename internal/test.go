@@ -12,18 +12,24 @@ import (
 )
 
 func CreateMemDir(path string, perm os.FileMode) os.FileInfo {
+	path = filepath.Clean(path)
+
 	fd := mem.CreateDir(path)
 	mem.SetMode(fd, os.ModeDir|perm)
 	return mem.GetFileInfo(fd)
 }
 
 func CreateMemFile(path, content string, perm os.FileMode) afero.File {
+	path = filepath.Clean(path)
+
 	fd := mem.CreateFile(path)
 	mem.SetMode(fd, perm)
 	return mem.NewFileHandle(fd)
 }
 
 func FileMustContainText(t *testing.T, fs afero.Fs, path, content string) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 	f, err := fs.Open(path)
 	require.NoError(err)
@@ -35,6 +41,8 @@ func FileMustContainText(t *testing.T, fs afero.Fs, path, content string) {
 }
 
 func MustNotExist(t *testing.T, fs afero.Fs, path string) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 	found, err := Exists(fs, path)
 	require.NoError(err)
@@ -42,6 +50,8 @@ func MustNotExist(t *testing.T, fs afero.Fs, path string) {
 }
 
 func MustExist(t *testing.T, fs afero.Fs, path string) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 	found, err := Exists(fs, path)
 	require.NoError(err)
@@ -49,6 +59,8 @@ func MustExist(t *testing.T, fs afero.Fs, path string) {
 }
 
 func RemoveFile(t *testing.T, fs afero.Fs, path string) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 
 	err := fs.Remove(path)
@@ -56,6 +68,8 @@ func RemoveFile(t *testing.T, fs afero.Fs, path string) {
 }
 
 func RemoveAll(t *testing.T, fs afero.Fs, path string) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 
 	err := fs.RemoveAll(path)
@@ -65,6 +79,8 @@ func RemoveAll(t *testing.T, fs afero.Fs, path string) {
 }
 
 func CreateFile(t *testing.T, fs afero.Fs, path, content string) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 
 	dirPath := filepath.Dir(path)
@@ -88,6 +104,8 @@ func CreateFile(t *testing.T, fs afero.Fs, path, content string) {
 }
 
 func OpenFile(t *testing.T, fs afero.Fs, path, content string, perm os.FileMode) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 
 	dirPath := filepath.Dir(path)
@@ -111,6 +129,8 @@ func OpenFile(t *testing.T, fs afero.Fs, path, content string, perm os.FileMode)
 }
 
 func MkdirAll(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
+	path = filepath.Clean(path)
+
 	require := require.New(t)
 	err := fs.MkdirAll(path, perm)
 	require.NoError(err)

@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"syscall"
@@ -224,6 +224,18 @@ func (fs *BackupFs) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// returns the cleaned path
+func (fs *BackupFs) realPath(name string) (path string, err error) {
+	if runtime.GOOS == "windows" && filepath.IsAbs(name) {
+		// On Windows a common mistake would be to provide an absolute OS path
+		// We could strip out the base part, but that would not be very portable.
+
+		return name, os.ErrNotExist
+	}
+
+	return filepath.Clean(name), nil
+}
+
 // keeps track of files in the base filesystem.
 // Files are saved only once, any consecutive update is ignored.
 func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
@@ -243,6 +255,11 @@ func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
 }
 
 func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
+	name, err := fs.realPath(name)
+	if err != nil {
+		return nil, err
+	}
+
 	fi, err := fs.base.Stat(name)
 
 	// keep track of initial
@@ -362,7 +379,12 @@ func (fs *BackupFs) tryBackup(name string) error {
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
 func (fs *BackupFs) Create(name string) (File, error) {
-	err := fs.tryBackup(name)
+	name, err := fs.realPath(name)
+	if err != nil {
+		return nil, err
+	}
+
+	err = fs.tryBackup(name)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +395,12 @@ func (fs *BackupFs) Create(name string) (File, error) {
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
 func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
-	err := fs.tryBackup(name)
+	name, err := fs.realPath(name)
+	if err != nil {
+		return err
+	}
+
+	err = fs.tryBackup(name)
 	if err != nil {
 		return err
 	}
@@ -383,7 +410,12 @@ func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
 // MkdirAll creates a directory path and all
 // parents that does not exist yet.
 func (fs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
-	err := fs.tryBackup(name)
+	name, err := fs.realPath(name)
+	if err != nil {
+		return err
+	}
+
+	err = fs.tryBackup(name)
 	if err != nil {
 		return err
 	}
@@ -399,13 +431,18 @@ func (fs *BackupFs) Open(name string) (File, error) {
 
 // OpenFile opens a file using the given flags and the given mode.
 func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	name, err := fs.realPath(name)
+	if err != nil {
+		return nil, err
+	}
+
 	if flag == os.O_RDONLY {
 		// in read only mode the perm is not used.
 		return fs.base.OpenFile(name, os.O_RDONLY, 0)
 	}
 
 	// not read only opening -> backup
-	err := fs.tryBackup(name)
+	err = fs.tryBackup(name)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +453,12 @@ func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, err
 // Remove removes a file identified by name, returning an error, if any
 // happens.
 func (fs *BackupFs) Remove(name string) error {
-	err := fs.tryBackup(name)
+	name, err := fs.realPath(name)
+	if err != nil {
+		return err
+	}
+
+	err = fs.tryBackup(name)
 	if err != nil {
 		return err
 	}
@@ -427,20 +469,25 @@ func (fs *BackupFs) Remove(name string) error {
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
 // not supported
-func (s *BackupFs) RemoveAll(name string) error {
-	fi, err := s.Stat(name)
+func (fs *BackupFs) RemoveAll(name string) error {
+	name, err := fs.realPath(name)
+	if err != nil {
+		return err
+	}
+
+	fi, err := fs.Stat(name)
 	if err != nil {
 		return err
 	}
 
 	// if it's a file, directly remove it
 	if !fi.IsDir() {
-		return s.Remove(name)
+		return fs.Remove(name)
 	}
 
 	directoryPaths := make([]string, 0, 1)
 
-	err = afero.Walk(s.base, name, func(path string, info fs.FileInfo, err error) error {
+	err = afero.Walk(fs.base, name, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -453,7 +500,7 @@ func (s *BackupFs) RemoveAll(name string) error {
 			return nil
 		}
 
-		return s.Remove(path)
+		return fs.Remove(path)
 	})
 
 	if err != nil {
@@ -466,7 +513,7 @@ func (s *BackupFs) RemoveAll(name string) error {
 	sort.Sort(internal.ByMostFilePathSeparators(directoryPaths))
 
 	for _, path := range directoryPaths {
-		err = s.Remove(path)
+		err = fs.Remove(path)
 		if err != nil {
 			return err
 		}
@@ -477,8 +524,18 @@ func (s *BackupFs) RemoveAll(name string) error {
 
 // Rename renames a file.
 func (fs *BackupFs) Rename(oldname, newname string) error {
+	newname, err := fs.realPath(newname)
+	if err != nil {
+		return err
+	}
+
+	oldname, err = fs.realPath(oldname)
+	if err != nil {
+		return err
+	}
+
 	// make target file known
-	err := fs.tryBackup(newname)
+	err = fs.tryBackup(newname)
 	if err != nil {
 		return err
 	}
@@ -497,7 +554,12 @@ func (fs *BackupFs) Rename(oldname, newname string) error {
 
 // Chmod changes the mode of the named file to mode.
 func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
-	err := fs.tryBackup(name)
+	name, err := fs.realPath(name)
+	if err != nil {
+		return err
+	}
+
+	err = fs.tryBackup(name)
 	if err != nil {
 		return err
 	}
@@ -507,7 +569,12 @@ func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
 
 // Chown changes the uid and gid of the named file.
 func (fs *BackupFs) Chown(name string, uid, gid int) error {
-	err := fs.tryBackup(name)
+	name, err := fs.realPath(name)
+	if err != nil {
+		return err
+	}
+
+	err = fs.tryBackup(name)
 	if err != nil {
 		return err
 	}
@@ -517,7 +584,12 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 
 //Chtimes changes the access and modification times of the named file
 func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
-	err := fs.tryBackup(name)
+	name, err := fs.realPath(name)
+	if err != nil {
+		return err
+	}
+
+	err = fs.tryBackup(name)
 	if err != nil {
 		return err
 	}
