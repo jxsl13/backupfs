@@ -236,7 +236,6 @@ func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
 // Stat returns a FileInfo describing the named file, or an error, if any happens.
 // Stat only looks at the base filesystem and returns the stat of the files at the specified path
 func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
-	name = filepath.ToSlash(name)
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -363,7 +362,6 @@ func (fs *BackupFs) tryBackup(name string) error {
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
 func (fs *BackupFs) Create(name string) (File, error) {
-	name = filepath.ToSlash(name)
 	err := fs.tryBackup(name)
 	if err != nil {
 		return nil, err
@@ -396,13 +394,11 @@ func (fs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
 func (fs *BackupFs) Open(name string) (File, error) {
-	name = filepath.ToSlash(name)
 	return fs.OpenFile(name, os.O_RDONLY, 0)
 }
 
 // OpenFile opens a file using the given flags and the given mode.
 func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	name = filepath.ToSlash(name)
 	if flag == os.O_RDONLY {
 		// in read only mode the perm is not used.
 		return fs.base.OpenFile(name, os.O_RDONLY, 0)
@@ -420,7 +416,6 @@ func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, err
 // Remove removes a file identified by name, returning an error, if any
 // happens.
 func (fs *BackupFs) Remove(name string) error {
-	name = filepath.ToSlash(name)
 	err := fs.tryBackup(name)
 	if err != nil {
 		return err
@@ -433,7 +428,6 @@ func (fs *BackupFs) Remove(name string) error {
 // does not fail if the path does not exist (return nil).
 // not supported
 func (s *BackupFs) RemoveAll(name string) error {
-	name = filepath.ToSlash(name)
 	fi, err := s.Stat(name)
 	if err != nil {
 		return err
@@ -483,8 +477,6 @@ func (s *BackupFs) RemoveAll(name string) error {
 
 // Rename renames a file.
 func (fs *BackupFs) Rename(oldname, newname string) error {
-	oldname = filepath.ToSlash(oldname)
-	newname = filepath.ToSlash(newname)
 	// make target file known
 	err := fs.tryBackup(newname)
 	if err != nil {
@@ -505,7 +497,6 @@ func (fs *BackupFs) Rename(oldname, newname string) error {
 
 // Chmod changes the mode of the named file to mode.
 func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
-	name = filepath.ToSlash(name)
 	err := fs.tryBackup(name)
 	if err != nil {
 		return err
@@ -516,7 +507,6 @@ func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
 
 // Chown changes the uid and gid of the named file.
 func (fs *BackupFs) Chown(name string, uid, gid int) error {
-	name = filepath.ToSlash(name)
 	err := fs.tryBackup(name)
 	if err != nil {
 		return err
@@ -527,7 +517,6 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 
 //Chtimes changes the access and modification times of the named file
 func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
-	name = filepath.ToSlash(name)
 	err := fs.tryBackup(name)
 	if err != nil {
 		return err
