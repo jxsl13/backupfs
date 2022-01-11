@@ -167,7 +167,7 @@ func (fs *BackupFs) MarshalJSON() ([]byte, error) {
 		}
 
 		fiMap[path] = &fInfo{
-			Name:    path,
+			Name:    filepath.ToSlash(path),
 			Mode:    uint32(fi.Mode()),
 			ModTime: fi.ModTime().UnixNano(),
 			IsDir:   fi.IsDir(),
@@ -193,6 +193,7 @@ func (fs *BackupFs) UnmarshalJSON(data []byte) error {
 	result := make(map[string]os.FileInfo, len(fiMap))
 
 	for path, fi := range fiMap {
+		path = filepath.FromSlash(path)
 		if fi == nil {
 			result[path] = nil
 			continue
