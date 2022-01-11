@@ -3,6 +3,7 @@ package backupfs_test
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 
@@ -81,7 +82,7 @@ func TestMockFsMkdir(t *testing.T) {
 	mf := NewMockFs(mockCtrl)
 	//proxyFs := afero.NewMemMapFs()
 	for _, d := range dirs {
-		mf.EXPECT().Stat(d.Path).AnyTimes().Return(d.Info, d.Error)
+		mf.EXPECT().Stat(filepath.ToSlash(d.Path)).AnyTimes().Return(d.Info, d.Error)
 		if d.Error == nil {
 			mf.EXPECT().MkdirAll(d.Path, gomock.Any()).Return(nil)
 		} else {
