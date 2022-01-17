@@ -277,6 +277,15 @@ func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
 	}
 }
 
+// alreadyFoundBaseInfo returns true when we already visited this path.
+// This is a helper function in order to NOT call the Stat method of the baseFs
+// an unnecessary amount of times for filepath sub directories when we can just lookup
+// the information in out internal filepath map
+func (fs *BackupFs) alreadyFoundBaseInfo(path string) bool {
+	_, found := fs.baseInfos[path]
+	return found
+}
+
 // Stat returns a FileInfo describing the named file, or an error, if any happens.
 // Stat only looks at the base filesystem and returns the stat of the files at the specified path
 func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
@@ -292,6 +301,27 @@ func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
 		return nil, err
 	}
 
+	// we want to check all parent directories before we check the actual file.
+	// in order to keep track of their state as well.
+	// /root -> /root/sub/ -> /root/sub/sub1
+	// iterate parent directories and keep track of their initial state.
+	internal.IterateDirTree(filepath.Dir(name), func(subdirPath string) error {
+		if fs.alreadyFoundBaseInfo(subdirPath) {
+			return nil
+		}
+
+		// only in case that we have not yet visited one of the subdirs already,
+		// only then fetch the file information from the underlying baseFs
+		// we do want to ignore errors as this is only for keeping track of subdirectories
+		_, _ = fs.trackedStat(subdirPath)
+		return nil
+	})
+
+	return fs.trackedStat(name)
+}
+
+// trackedStat is the tracked variant of Stat that is called on the underlying base Fs
+func (fs *BackupFs) trackedStat(name string) (os.FileInfo, error) {
 	fi, err := fs.base.Stat(name)
 
 	// keep track of initial

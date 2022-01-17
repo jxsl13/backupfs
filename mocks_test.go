@@ -33,6 +33,13 @@ func TestMockFsStat(t *testing.T) {
 	mf := NewMockFs(mockCtrl)
 	mf.EXPECT().Stat(filePath).AnyTimes().Return(nil, expectedErr)
 
+	// also expect calls to all sub directories
+	// in order to track their state AT LEAST ONCE.
+	internal.IterateDirTree(filepath.Dir(filePath), func(subdirPath string) error {
+		mf.EXPECT().Stat(subdirPath).AnyTimes().Return(nil, expectedErr)
+		return nil
+	})
+
 	// backupfs contains a broken basefile system
 	backup, fs := NewTestBackupFs(mf)
 
