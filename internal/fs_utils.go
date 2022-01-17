@@ -196,8 +196,8 @@ func RestoreFile(name string, backupFi fs.FileInfo, base, backup afero.Fs) error
 		return nil
 	}
 
-	if fi.IsDir() {
-		// remove dir and create a file there
+	if !fi.Mode().IsRegular() {
+		// remove dir/symlink/etc and create a file there
 		err = base.RemoveAll(name)
 		if err != nil {
 			// we failed to remove the directory
@@ -222,6 +222,29 @@ func RestoreFile(name string, backupFi fs.FileInfo, base, backup afero.Fs) error
 	return nil
 }
 
+func RestoreSymlink(name string, backupFi fs.FileInfo, base, backup afero.Fs, errBaseFsNoSymlink, errBackupFsNoSymlink error) error {
+	exists, err := LExists(backup, name)
+	if err != nil || !exists {
+		// best effort, if backup broken, we cannot restore
+		return nil
+	}
+
+	newFileExists, err := LExists(base, name)
+	if err != nil && newFileExists {
+		// remove dir/symlink/etc and create a new symlink there
+		err = base.RemoveAll(name)
+		if err != nil {
+			// in case we fail to remove the new file,
+			// we cannot restore the symlink
+			// best effort, fail silently
+			return nil
+		}
+	}
+
+	// try to restore symlink
+	return CopySymlink(backup, base, name, backupFi, errBaseFsNoSymlink, errBackupFsNoSymlink)
+}
+
 // Check if a file or directory exists.
 func Exists(fs afero.Fs, path string) (bool, error) {
 	_, err := fs.Stat(path)
@@ -232,11 +255,6 @@ func Exists(fs afero.Fs, path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
-}
-
-type LstaterFs interface {
-	afero.Lstater
-	afero.Fs
 }
 
 // Check if a symlin, file or directory exists.
@@ -258,7 +276,7 @@ func LExists(fs afero.Fs, path string) (bool, error) {
 }
 
 // Check if a symlin, file or directory exists.
-func LStatIfPossible(fs afero.Fs, path string) (fs.FileInfo, bool, error) {
+func LstatIfPossible(fs afero.Fs, path string) (fs.FileInfo, bool, error) {
 	lstater, ok := fs.(afero.Lstater)
 	if !ok {
 		fi, err := fs.Stat(path)
