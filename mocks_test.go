@@ -45,17 +45,17 @@ func TestMockFsStat(t *testing.T) {
 
 	_, err := fs.Create(filePath)
 	require.Error(err)
-	require.Equal(err, expectedErr)
+	require.True(errors.Is(err, expectedErr))
 
 	internal.MustNotExist(t, backup, filePath)
 
 	err = fs.Remove(filePath)
 	require.Error(err)
-	require.Equal(err, expectedErr)
+	require.True(errors.Is(err, expectedErr))
 
 	_, err = fs.OpenFile(filePath, os.O_RDWR, 0777)
 	require.Error(err)
-	require.Equal(err, expectedErr)
+	require.True(errors.Is(err, expectedErr))
 }
 
 func TestMockFsMkdir(t *testing.T) {

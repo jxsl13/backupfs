@@ -444,12 +444,12 @@ func (fs *BackupFs) tryBackup(name string) error {
 func (fs *BackupFs) Create(name string) (File, error) {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "create", Path: name, Err: err}
 	}
 
 	err = fs.tryBackup(name)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "create", Path: name, Err: err}
 	}
 	// create or truncate file
 	return fs.base.Create(name)
@@ -460,12 +460,12 @@ func (fs *BackupFs) Create(name string) (File, error) {
 func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "mkdir", Path: name, Err: err}
 	}
 
 	err = fs.tryBackup(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "mkdir", Path: name, Err: err}
 	}
 	return fs.base.Mkdir(name, perm)
 }
@@ -475,12 +475,12 @@ func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
 func (fs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "mkdir_all", Path: name, Err: err}
 	}
 
 	err = fs.tryBackup(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "mkdir_all", Path: name, Err: err}
 	}
 
 	return fs.base.MkdirAll(name, perm)
@@ -496,7 +496,7 @@ func (fs *BackupFs) Open(name string) (File, error) {
 func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "openfile", Path: name, Err: err}
 	}
 
 	if flag == os.O_RDONLY {
@@ -507,7 +507,7 @@ func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, err
 	// not read only opening -> backup
 	err = fs.tryBackup(name)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "openfile", Path: name, Err: err}
 	}
 
 	return fs.base.OpenFile(name, flag, perm)
@@ -518,12 +518,12 @@ func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, err
 func (fs *BackupFs) Remove(name string) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "remove", Path: name, Err: err}
 	}
 
 	err = fs.tryBackup(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "remove", Path: name, Err: err}
 	}
 
 	return fs.base.Remove(name)
@@ -535,12 +535,12 @@ func (fs *BackupFs) Remove(name string) error {
 func (fs *BackupFs) RemoveAll(name string) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "remove_all", Path: name, Err: err}
 	}
 
 	fi, err := fs.Stat(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "remove_all", Path: name, Err: err}
 	}
 
 	// if it's a file, directly remove it
@@ -589,18 +589,18 @@ func (fs *BackupFs) RemoveAll(name string) error {
 func (fs *BackupFs) Rename(oldname, newname string) error {
 	newname, err := fs.realPath(newname)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "rename", Path: newname, Err: err}
 	}
 
 	oldname, err = fs.realPath(oldname)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "rename", Path: oldname, Err: err}
 	}
 
 	// make target file known
 	err = fs.tryBackup(newname)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "rename", Path: newname, Err: err}
 	}
 
 	// there either was no previous file to be backed up
@@ -609,7 +609,7 @@ func (fs *BackupFs) Rename(oldname, newname string) error {
 
 	err = fs.tryBackup(oldname)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "rename", Path: oldname, Err: err}
 	}
 
 	return fs.base.Rename(oldname, newname)
@@ -619,12 +619,12 @@ func (fs *BackupFs) Rename(oldname, newname string) error {
 func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "chmod", Path: name, Err: err}
 	}
 
 	err = fs.tryBackup(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "chmod", Path: name, Err: err}
 	}
 
 	return fs.base.Chmod(name, mode)
@@ -634,12 +634,12 @@ func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
 func (fs *BackupFs) Chown(name string, uid, gid int) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "chown", Path: name, Err: err}
 	}
 
 	err = fs.tryBackup(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "chown", Path: name, Err: err}
 	}
 
 	return fs.base.Chown(name, uid, gid)
@@ -649,12 +649,12 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "chtimes", Path: name, Err: err}
 	}
 
 	err = fs.tryBackup(name)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "chtimes", Path: name, Err: err}
 	}
 
 	return fs.base.Chtimes(name, atime, mtime)
