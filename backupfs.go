@@ -25,6 +25,12 @@ var (
 	// ErrRollbackFailed is returned when the rollback fails due to e.g. network problems.
 	// when this error is returned it might make sense to retry the rollback
 	ErrRollbackFailed = errors.New("rollback failed")
+
+	// ErrBaseFsNoSymlink is returned in case that the base filesystem does not support symlinks
+	ErrBaseFsNoSymlink = fmt.Errorf("base filesystem: %w", afero.ErrNoSymlink)
+
+	// ErrBackupFsNoSymlink is returned in case that the backup target filesystem does not support symlinks
+	ErrBackupFsNoSymlink = fmt.Errorf("backup filesystem: %w", afero.ErrNoSymlink)
 )
 
 // File is implemented by the imported directory.
@@ -323,7 +329,7 @@ func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
 
 // trackedStat is the tracked variant of Stat that is called on the underlying base Fs
 func (fs *BackupFs) trackedStat(name string) (os.FileInfo, error) {
-	fi, err := fs.base.Stat(name)
+	fi, _, err := internal.LStatIfPossible(fs.base, name)
 
 	// keep track of initial
 	if err != nil {
@@ -662,6 +668,10 @@ func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
 }
 
 func (fs *BackupFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
+	return fs.lstatIfPossible(name)
+}
+
+func (fs *BackupFs) lstatIfPossible(name string) (os.FileInfo, bool, error) {
 	name, err := fs.realPath(name)
 	if err != nil {
 		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: err}
@@ -713,4 +723,90 @@ func (fs *BackupFs) ReadlinkIfPossible(name string) (string, error) {
 		return reader.ReadlinkIfPossible(name)
 	}
 	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
+}
+
+// backupSymlinkRequired checks whether a symlink that is about to be changed needs to be backed up.
+func (fs *BackupFs) backupSymlinkRequired(path string) (info os.FileInfo, required bool, err error) {
+	fs.mu.Lock()
+	info, found := fs.baseInfos[path]
+	if !found {
+		defer fs.mu.Unlock()
+		// fill fs.baseInfos
+		// of file & directory as well as their parent directories.
+		symlinkExists, err := internal.LExists(fs.base, path)
+		if err != nil {
+			// symlink not supported or another error
+			return nil, false, err
+		}
+
+		if !symlinkExists {
+			// no symlink, no backup needed
+			return nil, false, nil
+		}
+
+	}
+	fs.mu.Unlock()
+
+	// at this point info is either set by baseInfos or by fs.lstatIfPossible
+	if info == nil {
+		//actually no symlink expected at that location, so no backup of an ynew files
+		return nil, false, nil
+	}
+
+	// symlink found at base fs location
+
+	// did we already backup that symlink?
+	foundBackup, err := internal.LExists(fs.backup, path, ErrBackupFsNoSymlink)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if foundBackup {
+		// no need to backup, as we already backed up the file
+		return nil, false, nil
+	}
+
+	// backup is needed
+	return info, true, nil
+}
+
+func (fs *BackupFs) tryBackupSymlink(name string) error {
+
+	info, needsBackup, err := fs.backupSymlinkRequired(name)
+	if err != nil {
+		return err
+	}
+	if !needsBackup {
+		return nil
+	}
+
+	dirPath := name
+	if !info.IsDir() {
+		// is symlink, get parent dir
+		dirPath = filepath.Dir(dirPath)
+	}
+
+	// backup parent directories
+	err = internal.IterateDirTree(dirPath, func(subDirPath string) error {
+		fi, required, err := fs.backupRequired(subDirPath)
+		if err != nil {
+			return err
+		}
+
+		if !required {
+			return nil
+		}
+
+		return internal.CopyDir(fs.backup, subDirPath, fi)
+	})
+	if err != nil {
+		return err
+	}
+
+	// at this point the symlink needs to be backed up
+	// the symlink at path 'name' needs to point to its underlying
+	// target location
+	// we need to create a symlink in the backup filesystem that
+	// points to the same location as the symlink in the base filesystem
+	return internal.CopySymlink(fs.base, fs.backup, name, info, ErrBaseFsNoSymlink, ErrBackupFsNoSymlink)
 }

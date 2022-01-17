@@ -58,6 +58,15 @@ func MustExist(t *testing.T, fs afero.Fs, path string) {
 	require.True(found, "file path not found but should exist: "+path)
 }
 
+func MustLExist(t *testing.T, fs afero.Fs, path string) {
+	path = filepath.Clean(path)
+
+	require := require.New(t)
+	found, err := LExists(fs, path)
+	require.NoError(err)
+	require.True(found, "symlink path not found but should exist: "+path)
+}
+
 func RemoveFile(t *testing.T, fs afero.Fs, path string) {
 	path = filepath.Clean(path)
 
