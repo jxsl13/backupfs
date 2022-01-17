@@ -357,6 +357,7 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 	if !found {
 		defer fs.mu.Unlock()
 		// fill fs.baseInfos
+		// of file & directory as well as their parent directories.
 		info, err = fs.stat(path)
 		if err == nil {
 			return info, true, nil
