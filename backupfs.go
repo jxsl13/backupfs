@@ -17,9 +17,10 @@ import (
 	"github.com/spf13/afero/mem"
 )
 
-// assert interface implemented
 var (
-	_ afero.Fs = (*BackupFs)(nil)
+	// assert interfaces implemented
+	_ afero.Fs        = (*BackupFs)(nil)
+	_ afero.Symlinker = (*BackupFs)(nil)
 
 	// ErrRollbackFailed is returned when the rollback fails due to e.g. network problems.
 	// when this error is returned it might make sense to retry the rollback
@@ -658,4 +659,58 @@ func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
 	}
 
 	return fs.base.Chtimes(name, atime, mtime)
+}
+
+func (fs *BackupFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
+	name, err := fs.realPath(name)
+	if err != nil {
+		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: err}
+	}
+	if lstater, ok := fs.base.(afero.Lstater); ok {
+		return lstater.LstatIfPossible(name)
+	}
+
+	// we call fs.Stat instead of fs.base.Stat in order to get more information about the underlying
+	fi, err := fs.Stat(name)
+	return fi, false, err
+}
+
+//SymlinkIfPossible changes the access and modification times of the named file
+func (fs *BackupFs) SymlinkIfPossible(oldname, newname string) error {
+	oldname, err := fs.realPath(oldname)
+	if err != nil {
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+	}
+
+	newname, err = fs.realPath(newname)
+	if err != nil {
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+	}
+
+	// we only want to backup the newname,
+	// as seemingly the new name is the target symlink location
+	// the old file path should not have been modified
+
+	// in case we fail to backup the symlink, we return an error
+	err = fs.tryBackup(newname)
+	if err != nil {
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+	}
+
+	if linker, ok := fs.base.(afero.Linker); ok {
+		return linker.SymlinkIfPossible(oldname, newname)
+	}
+	return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: afero.ErrNoSymlink}
+}
+
+func (fs *BackupFs) ReadlinkIfPossible(name string) (string, error) {
+	name, err := fs.realPath(name)
+	if err != nil {
+		return "", &os.PathError{Op: "readlink", Path: name, Err: err}
+	}
+
+	if reader, ok := fs.base.(afero.LinkReader); ok {
+		return reader.ReadlinkIfPossible(name)
+	}
+	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
 }
