@@ -2,6 +2,7 @@ package backupfs
 
 import (
 	"encoding/json"
+	"log"
 	"sync"
 	"testing"
 
@@ -36,12 +37,33 @@ func NewTestPrefixFs(prefix string) *PrefixFs {
 	return NewPrefixFs(prefix, NewTestMemMapFs())
 }
 
+// this helper function is needed in order to test on the local filesystem
+// and not in memory
+func NewTempdirPrefixFs(prefix string) *PrefixFs {
+	osFs := afero.NewOsFs()
+
+	prefix, err := afero.TempDir(osFs, "", prefix)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return NewPrefixFs(prefix, osFs)
+}
+
 func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup afero.Fs, backupFs *BackupFs) {
 	root = NewTestPrefixFs("/")
 	base = NewTestPrefixFs(basePrefix)
 	backup = NewTestPrefixFs(backupPrefix)
 	backupFs = NewBackupFs(base, backup)
 	return root, base, backup, backupFs
+}
+
+func NewTestTempdirBackupFs(basePrefix, backupPrefix string) (base, backup afero.Fs, backupFs *BackupFs) {
+
+	base = NewTempdirPrefixFs(basePrefix)
+	backup = NewTempdirPrefixFs(backupPrefix)
+	backupFs = NewBackupFs(base, backup)
+	return base, backup, backupFs
 }
 
 func TestBackupFsCreate(t *testing.T) {
@@ -449,7 +471,7 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 		backupPrefix = "/backup"
 	)
 
-	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+	base, backup, backupFs := NewTestTempdirBackupFs(basePrefix, backupPrefix)
 
 	var (
 		// different number of file path separators
@@ -462,20 +484,28 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 
 	// base filesystem structure and files befor emodifying
 
-	internal.MkdirAll(t, base, basePrefix+fileDir, 0755)
-	internal.MkdirAll(t, base, basePrefix+fileDir2, 0755)
+	internal.MkdirAll(t, base, fileDir, 0755)
+	internal.MkdirAll(t, base, fileDir2, 0755)
 
-	internal.CreateFile(t, base, basePrefix+fileDir+"/test01.txt", fileContent)
-	internal.CreateFile(t, base, basePrefix+fileDir2+"/test02.txt", fileContent)
+	internal.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test02.txt", fileContent)
 
-	internal.CreateSymlink(t, base, basePrefix+fileDir+"/test01.txt", basePrefix+fileDirRoot+"/test_symlink.txt")
+	internal.CreateSymlink(t, base, fileDir+"/test01.txt", fileDirRoot+"/test_symlink.txt")
 
 	// modify through backupFs layer
 
 	// the old symlink must have been backed up after this call
-	internal.CreateSymlink(t, backupFs, fileDir+"/test01.txt", fileDirRoot+"/test_symlink.txt")
 
-	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/test_symlink.txt", fileDir+"/test01.txt")
+	internal.RemoveFile(t, backupFs, fileDirRoot+"/test_symlink.txt")
+
+	// potential problem case:
+	// Symlink creation fails midway due to another file, directory or symlink already existing.
+	// due to the writing character of the symlink method we do create a backup
+	// but fail to create a new symlink thus the backedup file and the old symlink are indeed the exact same
+	// not exactly a problem but may caus eunnecessary backe dup data
+	internal.CreateSymlink(t, backupFs, fileDir2+"/test02.txt", fileDirRoot+"/test_symlink.txt")
+
+	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/test_symlink.txt", fileDir2+"/test02.txt")
 
 	internal.SymlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/test_symlink.txt", fileDir+"/test01.txt")
 

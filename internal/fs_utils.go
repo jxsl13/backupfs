@@ -152,21 +152,22 @@ func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBase
 		return err
 	}
 
-	err = backupFs.Chmod(name, info.Mode())
-	if err != nil {
-		return err
-	}
+	/*
+		FIXME: these follow the link and this do not modify the actual symlink
+		// Chmod for symlinks seems not to make sense as the symlink just points at something.
+		// Chtimes doe snot seem to apply to symlinks as well
+		modTime := info.ModTime()
+		err = backupFs.Chtimes(name, modTime, modTime)
+		if err != nil {
+			return err
+		}
 
-	modTime := info.ModTime()
-	err = backupFs.Chtimes(name, modTime, modTime)
-	if err != nil {
-		return err
-	}
-
-	err = Chown(info, name, backupFs)
-	if err != nil {
-		return err
-	}
+		// This is the only function implemented by the os package.
+		err = Chown(info, name, backupFs)
+		if err != nil {
+			return err
+		}
+	*/
 
 	return nil
 }

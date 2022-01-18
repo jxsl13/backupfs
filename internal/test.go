@@ -97,6 +97,15 @@ func MustNotExist(t *testing.T, fs afero.Fs, path string) {
 	require.False(found, "found file path but should not exist: "+path)
 }
 
+func MustNotLExist(t *testing.T, fs afero.Fs, path string) {
+	path = filepath.Clean(path)
+
+	require := require.New(t)
+	found, err := LExists(fs, path)
+	require.NoError(err)
+	require.Falsef(found, "path found but should not exist: %s", path)
+}
+
 func MustExist(t *testing.T, fs afero.Fs, path string) {
 	path = filepath.Clean(path)
 
@@ -112,7 +121,7 @@ func MustLExist(t *testing.T, fs afero.Fs, path string) {
 	require := require.New(t)
 	found, err := LExists(fs, path)
 	require.NoError(err)
-	require.Truef(found, "symlink path not found but should exist: %s", path)
+	require.Truef(found, "path not found but should exist: %s", path)
 }
 
 func RemoveFile(t *testing.T, fs afero.Fs, path string) {
@@ -122,6 +131,8 @@ func RemoveFile(t *testing.T, fs afero.Fs, path string) {
 
 	err := fs.Remove(path)
 	require.NoError(err)
+
+	MustNotLExist(t, fs, path)
 }
 
 func RemoveAll(t *testing.T, fs afero.Fs, path string) {
@@ -132,7 +143,7 @@ func RemoveAll(t *testing.T, fs afero.Fs, path string) {
 	err := fs.RemoveAll(path)
 	require.NoError(err)
 
-	MustNotExist(t, fs, path)
+	MustNotLExist(t, fs, path)
 }
 
 type SymlinkFs interface {
