@@ -489,23 +489,30 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 	internal.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
 	internal.CreateFile(t, base, fileDir2+"/test02.txt", fileContent)
 
-	internal.CreateSymlink(t, base, fileDir+"/test01.txt", fileDirRoot+"/test_symlink.txt")
+	internal.CreateSymlink(t, base, fileDir+"/test01.txt", fileDirRoot+"/file_symlink")
+	internal.CreateSymlink(t, base, fileDir, fileDirRoot+"/directory_symlink")
 
 	// modify through backupFs layer
 
 	// the old symlink must have been backed up after this call
 
-	internal.RemoveFile(t, backupFs, fileDirRoot+"/test_symlink.txt")
+	internal.RemoveFile(t, backupFs, fileDirRoot+"/file_symlink")
+	internal.RemoveFile(t, backupFs, fileDirRoot+"/directory_symlink")
 
 	// potential problem case:
 	// Symlink creation fails midway due to another file, directory or symlink already existing.
 	// due to the writing character of the symlink method we do create a backup
 	// but fail to create a new symlink thus the backedup file and the old symlink are indeed the exact same
 	// not exactly a problem but may caus eunnecessary backe dup data
-	internal.CreateSymlink(t, backupFs, fileDir2+"/test02.txt", fileDirRoot+"/test_symlink.txt")
+	internal.CreateSymlink(t, backupFs, fileDir2+"/test02.txt", fileDirRoot+"/file_symlink")
 
-	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/test_symlink.txt", fileDir2+"/test02.txt")
+	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/file_symlink", fileDir2+"/test02.txt")
 
-	internal.SymlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/test_symlink.txt", fileDir+"/test01.txt")
+	internal.SymlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/file_symlink", fileDir+"/test01.txt")
+
+	// create folder symlinks
+	internal.CreateSymlink(t, backupFs, fileDir2, fileDirRoot+"/directory_symlink")
+	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/directory_symlink", fileDir2)
+	internal.SymlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/directory_symlink", fileDir)
 
 }
