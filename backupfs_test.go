@@ -464,7 +464,6 @@ func TestBackupFsJSON(t *testing.T) {
 }
 
 func TestBackupFs_SymlinkIfPossible(t *testing.T) {
-	ResetTestMemMapFs()
 
 	var (
 		basePrefix   = "/base"
