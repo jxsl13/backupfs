@@ -237,7 +237,7 @@ func RestoreSymlink(name string, backupFi fs.FileInfo, base, backup afero.Fs, er
 	}
 
 	newFileExists, err := LExists(base, name)
-	if err != nil && newFileExists {
+	if err == nil && newFileExists {
 		// remove dir/symlink/etc and create a new symlink there
 		err = base.RemoveAll(name)
 		if err != nil {
