@@ -756,7 +756,7 @@ func (fs *BackupFs) baseLstatIfPossible(name string) (os.FileInfo, bool, error) 
 	}
 
 	// we call fs.Stat instead of fs.base.Stat in order to get more information about the underlying
-	fi, err := fs.stat(name)
+	fi, err := fs.base.Stat(name)
 	return fi, false, err
 }
 
