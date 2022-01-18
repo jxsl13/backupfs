@@ -473,6 +473,7 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 	base, backup, backupFs := NewTestTempdirBackupFs(basePrefix, backupPrefix)
 
 	var (
+		require = require.New(t)
 		// different number of file path separators
 		// while still having the same number of characters in the filepath
 		fileDirRoot = "/test"
@@ -514,5 +515,18 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 	internal.CreateSymlink(t, backupFs, fileDir2, fileDirRoot+"/directory_symlink")
 	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/directory_symlink", fileDir2)
 	internal.SymlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/directory_symlink", fileDir)
+
+	err := backupFs.Rollback()
+	require.NoError(err)
+
+	// assert both base symlinks point to their respective previous paths
+	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/file_symlink", fileDir+"/test01.txt")
+	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/directory_symlink", fileDir)
+
+	internal.SymlinkMustExistWithTragetPath(t, base, fileDirRoot+"/file_symlink", fileDir+"/test01.txt")
+	internal.SymlinkMustExistWithTragetPath(t, base, fileDirRoot+"/directory_symlink", fileDir)
+
+	internal.MustNotLExist(t, backup, fileDirRoot+"/file_symlink")
+	internal.MustNotLExist(t, backup, fileDirRoot+"/directory_symlink")
 
 }
