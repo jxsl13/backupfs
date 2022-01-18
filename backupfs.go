@@ -755,24 +755,26 @@ func (fs *BackupFs) lstatIfPossible(name string) (os.FileInfo, bool, error) {
 		return nil
 	})
 
-	fi, err := fs.trackedLstat(name)
+	fi, lstatCalled, err := fs.trackedLstat(name)
 	if err != nil {
-		return nil, false, err
+		return nil, lstatCalled, err
 	}
 
-	return fi, false, nil
+	return fi, lstatCalled, nil
 }
 
 // trackedLstat has the same logic as trackedStat but it uses Lstat instead, in case that is possible.
-func (fs *BackupFs) trackedLstat(name string) (os.FileInfo, error) {
+func (fs *BackupFs) trackedLstat(name string) (os.FileInfo, bool, error) {
 	var (
 		fi  os.FileInfo
 		err error
+		// only set to true when lstat is called
+		lstatCalled = false
 	)
 
 	baseLstater, ok := internal.LstaterIfPossible(fs.base, name)
 	if ok {
-		fi, _, err = baseLstater.LstatIfPossible(name)
+		fi, lstatCalled, err = baseLstater.LstatIfPossible(name)
 	} else {
 		fi, err = fs.base.Stat(name)
 
@@ -784,22 +786,22 @@ func (fs *BackupFs) trackedLstat(name string) (os.FileInfo, error) {
 			if oerr.Err == os.ErrNotExist || oerr.Err == syscall.ENOENT || oerr.Err == syscall.ENOTDIR {
 				// file or symlink does not exist
 				fs.setBaseInfoIfNotFound(name, nil)
-				return nil, err
+				return nil, lstatCalled, err
 			}
 		}
 		if err == syscall.ENOENT {
 			// file or symlink does not exist
 			fs.setBaseInfoIfNotFound(name, nil)
-			return nil, err
+			return nil, lstatCalled, err
 		}
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, lstatCalled, err
 	}
 
 	fs.setBaseInfoIfNotFound(name, fi)
-	return fi, nil
+	return fi, lstatCalled, nil
 }
 
 //SymlinkIfPossible changes the access and modification times of the named file
