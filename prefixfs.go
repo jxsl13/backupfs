@@ -10,8 +10,11 @@ import (
 	"github.com/spf13/afero"
 )
 
-// check for interface implementation
-var _ afero.Fs = (*PrefixFs)(nil)
+// assert interfaces implemented
+var (
+	_ afero.Fs        = (*PrefixFs)(nil)
+	_ afero.Symlinker = (*PrefixFs)(nil)
+)
 
 // NewPrefixFs creates a new file system abstraction that forces any path to be prepended with
 // the provided prefix.
@@ -214,5 +217,42 @@ func (s *PrefixFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 
 }
 
+//SymlinkIfPossible changes the access and modification times of the named file
+func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
+	oldPath, err := s.prefixPath(oldname)
+	if err != nil {
+		return err
+	}
 
+	newPath, err := s.prefixPath(newname)
+	if err != nil {
+		return err
+	}
+
+	if l, ok := s.base.(afero.Linker); ok {
+		// implements interface
+		err := l.SymlinkIfPossible(oldPath, newPath)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: afero.ErrNoSymlink}
+}
+
+func (s *PrefixFs) ReadlinkIfPossible(name string) (string, error) {
+	path, err := s.prefixPath(name)
+	if err != nil {
+		return "", err
+	}
+
+	if reader, ok := s.base.(afero.LinkReader); ok {
+		linkedPath, err := reader.ReadlinkIfPossible(path)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimPrefix(linkedPath, s.prefix), nil
+	}
+
+	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
 }
