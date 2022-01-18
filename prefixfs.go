@@ -148,7 +148,12 @@ func (s *PrefixFs) Stat(name string) (os.FileInfo, error) {
 		return nil, err
 	}
 
-	return s.base.Stat(path)
+	fi, err := s.base.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return newPrefixFileInfo(fi, s.prefix), nil
 }
 
 // The name of this FileSystem
@@ -196,11 +201,18 @@ func (s *PrefixFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 
 	if l, ok := s.base.(afero.Lstater); ok {
 		// implements interface
-		return l.LstatIfPossible(path)
+		fi, lstatCalled, err := l.LstatIfPossible(path)
+		if err != nil {
+			return nil, lstatCalled, err
+		}
+		return newPrefixFileInfo(fi, s.prefix), lstatCalled, nil
 	}
 
 	// does not implement lstat, fallback to stat
 	fi, err := s.base.Stat(path)
-	return fi, false, err
+	return newPrefixFileInfo(fi, s.prefix), false, err
+
+}
+
 
 }
