@@ -707,6 +707,7 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 		return &os.PathError{Op: "chown", Path: name, Err: err}
 	}
 
+	// TODO: do we want to ignore errors from Windows that this function is not supported by the OS?
 	return fs.base.Chown(name, uid, gid)
 }
 

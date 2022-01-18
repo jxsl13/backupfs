@@ -20,3 +20,7 @@ func Gid(from fs.FileInfo) int {
 	// invalid uid = default value
 	return -1
 }
+
+func IgnorableError(err error) error {
+	return err
+}

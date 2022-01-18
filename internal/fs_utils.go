@@ -74,7 +74,11 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 		// TODO: do we want to fail here?
 		return err
 	}
-	err = Chown(info, name, fs)
+
+	// chown only on ever other
+	// https://pkg.go.dev/os#Chown
+	// Windows & PLan9 not supported
+	err = IgnorableError(Chown(info, name, fs))
 	if err != nil {
 		return err
 	}
@@ -112,8 +116,10 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 	if err != nil {
 		return err
 	}
-	err = Chown(info, name, fs)
 
+	// might cause a windows error that this function is not implemented by the OS
+	// in a unix fassion
+	err = IgnorableError(Chown(info, name, fs))
 	if err != nil {
 		return err
 	}
