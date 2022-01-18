@@ -40,6 +40,54 @@ func FileMustContainText(t *testing.T, fs afero.Fs, path, content string) {
 	require.Equal(string(b), content)
 }
 
+func SymlinkMustExist(t *testing.T, fs afero.Fs, symlinkPath string) {
+	symlinkPath = filepath.Clean(symlinkPath)
+
+	require := require.New(t)
+	sf, ok := fs.(SymlinkFs)
+	require.Truef(ok, "filesystem does not implement the SymlinkFs interface: %s", fs.Name())
+
+	fi, lstatCalled, err := sf.LstatIfPossible(symlinkPath)
+	require.Falsef(os.IsNotExist(err), "target symlink does not exist but is expected to exist: %s", symlinkPath)
+
+	require.NoError(err)
+
+	require.Truef(lstatCalled, "lstat has no been called for: %s", symlinkPath)
+
+	hasSymlinkFlag := fi.Mode().Type()&os.ModeSymlink != 0
+	require.Truef(hasSymlinkFlag, "target symlink does not have the symlink flag: %s", symlinkPath)
+
+	actualPointsTo, err := sf.ReadlinkIfPossible(symlinkPath)
+	require.NoError(err)
+
+	require.True(actualPointsTo != "", "symlink target path is empty")
+}
+
+func SymlinkMustExistWithTragetPath(t *testing.T, fs afero.Fs, symlinkPath, expectedPointsTo string) {
+	symlinkPath = filepath.Clean(symlinkPath)
+	expectedPointsTo = filepath.Clean(expectedPointsTo)
+
+	require := require.New(t)
+	sf, ok := fs.(SymlinkFs)
+	require.True(ok, "filesystem does not implement the SymlinkFs interface: ", fs.Name())
+
+	fi, lstatCalled, err := sf.LstatIfPossible(symlinkPath)
+	require.False(os.IsNotExist(err), "target symlink does not exist but is expected to exist: ", symlinkPath)
+
+	require.NoError(err)
+
+	require.True(lstatCalled, "lstat has no been called for: ", symlinkPath)
+
+	hasSymlinkFlag := fi.Mode().Type()&os.ModeSymlink != 0
+	require.True(hasSymlinkFlag, "target symlink does not have the symlink flag: ", symlinkPath)
+
+	actualPointsTo, err := sf.ReadlinkIfPossible(symlinkPath)
+	require.NoError(err)
+
+	require.Equal(expectedPointsTo, actualPointsTo, "symlink does not point to the expected path")
+
+}
+
 func MustNotExist(t *testing.T, fs afero.Fs, path string) {
 	path = filepath.Clean(path)
 
@@ -64,7 +112,7 @@ func MustLExist(t *testing.T, fs afero.Fs, path string) {
 	require := require.New(t)
 	found, err := LExists(fs, path)
 	require.NoError(err)
-	require.True(found, "symlink path not found but should exist: "+path)
+	require.Truef(found, "symlink path not found but should exist: %s", path)
 }
 
 func RemoveFile(t *testing.T, fs afero.Fs, path string) {
@@ -85,6 +133,60 @@ func RemoveAll(t *testing.T, fs afero.Fs, path string) {
 	require.NoError(err)
 
 	MustNotExist(t, fs, path)
+}
+
+type SymlinkFs interface {
+	afero.Fs
+	afero.Symlinker
+}
+
+func CreateSymlink(t *testing.T, fs afero.Fs, oldpath, newpath string) {
+	require := require.New(t)
+
+	sf, ok := fs.(SymlinkFs)
+	require.Truef(ok, "filesystem does not implement the SymlinkFs interface: %s", fs.Name())
+
+	oldpath = filepath.Clean(oldpath)
+	newpath = filepath.Clean(newpath)
+
+	dirPath := filepath.Dir(oldpath)
+	found, err := Exists(sf, dirPath)
+	require.NoError(err)
+
+	if !found {
+		err = sf.MkdirAll(dirPath, 0755)
+		require.NoError(err)
+	}
+
+	dirPath = filepath.Dir(newpath)
+	found, err = Exists(sf, dirPath)
+	require.NoError(err)
+
+	if !found {
+		err = sf.MkdirAll(dirPath, 0755)
+		require.NoError(err)
+	}
+
+	// check newpath after creating the symlink
+	err = sf.SymlinkIfPossible(oldpath, newpath)
+	require.NoError(err)
+
+	fi, lstatCalled, err := sf.LstatIfPossible(newpath)
+	require.NoError(err)
+
+	require.Truef(lstatCalled, "lstat has not been called but is expected to have been called (old -> new): %s -> %s", oldpath, newpath)
+
+	hasSymlinkFlag := fi.Mode().Type()&os.ModeSymlink != 0
+	require.True(hasSymlinkFlag, "the target(newpath) symlink does not have the symlink flag set: ", newpath)
+
+	// check oldpath after creating the symlink
+	fi, lstatCalled, err = sf.LstatIfPossible(oldpath)
+	require.NoError(err)
+
+	require.True(lstatCalled, "lstat has not been called but is expected to have been called (old -> new): %s -> %s", oldpath, newpath)
+
+	hasSymlinkFlag = fi.Mode().Type()&os.ModeSymlink != 0
+	require.Falsef(hasSymlinkFlag, "the source (oldpath) symlink does have the symlink flag set but is expected not to have it set: %s", oldpath)
 }
 
 func CreateFile(t *testing.T, fs afero.Fs, path, content string) {

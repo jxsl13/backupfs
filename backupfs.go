@@ -368,7 +368,7 @@ func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
 
 // trackedStat is the tracked variant of Stat that is called on the underlying base Fs
 func (fs *BackupFs) trackedStat(name string) (os.FileInfo, error) {
-	fi, _, err := fs.baseLstatIfPossible(name)
+	fi, err := fs.base.Stat(name)
 
 	// keep track of initial
 	if err != nil {
@@ -404,7 +404,7 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 		defer fs.mu.Unlock()
 		// fill fs.baseInfos
 		// of symlink, file & directory as well as their parent directories.
-		info, _, err = fs.baseLstatIfPossible(path)
+		info, _, err = fs.lstatIfPossible(path)
 		if err == nil {
 			return info, true, nil
 		}
@@ -430,7 +430,7 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 	}
 
 	if foundBackup {
-		// no need to backup, as we already backe dup the file
+		// no need to backup, as we already backed up the file
 		return nil, false, nil
 	}
 
@@ -729,35 +729,77 @@ func (fs *BackupFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	return fs.baseLstatIfPossible(name)
+	return fs.lstatIfPossible(name)
 }
 
-func (fs *BackupFs) backupLstatIfPossible(name string) (os.FileInfo, bool, error) {
+// lstatIfPossible has the same logic as stat
+func (fs *BackupFs) lstatIfPossible(name string) (os.FileInfo, bool, error) {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: err}
-	}
-	if lstater, ok := fs.backup.(afero.Lstater); ok {
-		return lstater.LstatIfPossible(name)
+		return nil, false, err
 	}
 
-	// call Stat directly of the backup filesystem
-	fi, err := fs.backup.Stat(name)
-	return fi, false, err
+	// we want to check all parent directories before we check the actual file.
+	// in order to keep track of their state as well.
+	// /root -> /root/sub/ -> /root/sub/sub1
+	// iterate parent directories and keep track of their initial state.
+	internal.IterateDirTree(filepath.Dir(name), func(subdirPath string) error {
+		if fs.alreadyFoundBaseInfo(subdirPath) {
+			return nil
+		}
+
+		// only in the case that we do not know the subdirectory already
+		// we do want to track th einitial state of the subdirectory.
+		// if it does not exist, it should not exist
+		_, _ = fs.trackedStat(subdirPath)
+		return nil
+	})
+
+	fi, err := fs.trackedLstat(name)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return fi, false, nil
 }
 
-func (fs *BackupFs) baseLstatIfPossible(name string) (os.FileInfo, bool, error) {
-	name, err := fs.realPath(name)
-	if err != nil {
-		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: err}
-	}
-	if lstater, ok := fs.base.(afero.Lstater); ok {
-		return lstater.LstatIfPossible(name)
+// trackedLstat has the same logic as trackedStat but it uses Lstat instead, in case that is possible.
+func (fs *BackupFs) trackedLstat(name string) (os.FileInfo, error) {
+	var (
+		fi  os.FileInfo
+		err error
+	)
+
+	baseLstater, ok := internal.LstaterIfPossible(fs.base, name)
+	if ok {
+		fi, _, err = baseLstater.LstatIfPossible(name)
+	} else {
+		fi, err = fs.base.Stat(name)
+
 	}
 
-	// we call fs.Stat instead of fs.base.Stat in order to get more information about the underlying
-	fi, err := fs.base.Stat(name)
-	return fi, false, err
+	// keep track of initial
+	if err != nil {
+		if oerr, ok := err.(*os.PathError); ok {
+			if oerr.Err == os.ErrNotExist || oerr.Err == syscall.ENOENT || oerr.Err == syscall.ENOTDIR {
+				// file or symlink does not exist
+				fs.setBaseInfoIfNotFound(name, nil)
+				return nil, err
+			}
+		}
+		if err == syscall.ENOENT {
+			// file or symlink does not exist
+			fs.setBaseInfoIfNotFound(name, nil)
+			return nil, err
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	fs.setBaseInfoIfNotFound(name, fi)
+	return fi, nil
 }
 
 //SymlinkIfPossible changes the access and modification times of the named file

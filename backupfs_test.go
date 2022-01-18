@@ -440,3 +440,43 @@ func TestBackupFsJSON(t *testing.T) {
 	internal.MustExist(t, backupFs, "/test/001")
 
 }
+
+func TestBackupFs_SymlinkIfPossible(t *testing.T) {
+	ResetTestMemMapFs()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot = "/test"
+		fileDir     = "/test/001"
+		fileDir2    = "/test/0/2"
+		fileContent = "test_content"
+	)
+
+	// base filesystem structure and files befor emodifying
+
+	internal.MkdirAll(t, base, basePrefix+fileDir, 0755)
+	internal.MkdirAll(t, base, basePrefix+fileDir2, 0755)
+
+	internal.CreateFile(t, base, basePrefix+fileDir+"/test01.txt", fileContent)
+	internal.CreateFile(t, base, basePrefix+fileDir2+"/test02.txt", fileContent)
+
+	internal.CreateSymlink(t, base, basePrefix+fileDir+"/test01.txt", basePrefix+fileDirRoot+"/test_symlink.txt")
+
+	// modify through backupFs layer
+
+	// the old symlink must have been backed up after this call
+	internal.CreateSymlink(t, backupFs, fileDir+"/test01.txt", fileDirRoot+"/test_symlink.txt")
+
+	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/test_symlink.txt", fileDir+"/test01.txt")
+
+	internal.SymlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/test_symlink.txt", fileDir+"/test01.txt")
+
+}

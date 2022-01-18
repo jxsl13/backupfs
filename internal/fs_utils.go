@@ -275,18 +275,13 @@ func LExists(fs afero.Fs, path string) (bool, error) {
 	return false, err
 }
 
-// Check if a symlin, file or directory exists.
-func LstatIfPossible(fs afero.Fs, path string) (fs.FileInfo, bool, error) {
+// Check if interface is implemented
+func LstaterIfPossible(fs afero.Fs, path string) (afero.Lstater, bool) {
 	lstater, ok := fs.(afero.Lstater)
-	if !ok {
-		fi, err := fs.Stat(path)
-		if err == nil {
-			return fi, false, nil
-		}
-		return nil, false, err
+	if ok {
+		return lstater, true
 	}
-
-	return lstater.LstatIfPossible(path)
+	return nil, false
 }
 
 // current OS filepath separator / or \
