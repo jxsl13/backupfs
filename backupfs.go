@@ -399,21 +399,21 @@ func (fs *BackupFs) trackedStat(name string) (os.FileInfo, error) {
 // do not  need to be backed up (again)
 func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool, err error) {
 	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
 	info, found := fs.baseInfos[path]
 	if !found {
-		defer fs.mu.Unlock()
 		// fill fs.baseInfos
 		// of symlink, file & directory as well as their parent directories.
 		info, _, err = fs.lstatIfPossible(path)
-		if err == nil {
-			return info, true, nil
-		}
-		if os.IsNotExist(err) {
+		if err != nil && os.IsNotExist(err) {
+			// not found, no backup needed
 			return nil, false, nil
+		} else if err != nil {
+			return nil, false, err
 		}
-		return nil, false, err
+		// err == nil
 	}
-	fs.mu.Unlock()
 
 	// at this point info is either set by baseInfos or by fs.tat
 	if info == nil {
