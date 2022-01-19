@@ -516,6 +516,8 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 	internal.SymlinkMustExistWithTragetPath(t, backupFs, fileDirRoot+"/directory_symlink", fileDir2)
 	internal.SymlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/directory_symlink", fileDir)
 
+	internal.CreateSymlink(t, backupFs, fileDir2+"/does_not_exist", "/to_be_removed_symlink")
+
 	err := backupFs.Rollback()
 	require.NoError(err)
 
@@ -525,6 +527,9 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 
 	internal.SymlinkMustExistWithTragetPath(t, base, fileDirRoot+"/file_symlink", fileDir+"/test01.txt")
 	internal.SymlinkMustExistWithTragetPath(t, base, fileDirRoot+"/directory_symlink", fileDir)
+
+	// never existed before, was created and then rolled back
+	internal.MustNotLExist(t, backupFs, "/to_be_removed_symlink")
 
 	internal.MustNotLExist(t, backup, fileDirRoot+"/file_symlink")
 	internal.MustNotLExist(t, backup, fileDirRoot+"/directory_symlink")

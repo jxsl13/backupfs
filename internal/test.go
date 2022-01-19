@@ -192,12 +192,19 @@ func CreateSymlink(t *testing.T, fs afero.Fs, oldpath, newpath string) {
 
 	// check oldpath after creating the symlink
 	fi, lstatCalled, err = sf.LstatIfPossible(oldpath)
-	require.NoError(err)
+	switch {
+	case err == nil:
+		require.True(lstatCalled, "lstat has not been called but is expected to have been called (old -> new): %s -> %s", oldpath, newpath)
 
-	require.True(lstatCalled, "lstat has not been called but is expected to have been called (old -> new): %s -> %s", oldpath, newpath)
+		hasSymlinkFlag = fi.Mode().Type()&os.ModeSymlink != 0
+		require.Falsef(hasSymlinkFlag, "the source (oldpath) symlink does have the symlink flag set but is expected not to have it set: %s", oldpath)
+	case os.IsNotExist(err):
+		// broken symlink that points to an invalid location may be created
+		return
+	default:
+		require.NoError(err)
+	}
 
-	hasSymlinkFlag = fi.Mode().Type()&os.ModeSymlink != 0
-	require.Falsef(hasSymlinkFlag, "the source (oldpath) symlink does have the symlink flag set but is expected not to have it set: %s", oldpath)
 }
 
 func CreateFile(t *testing.T, fs afero.Fs, path, content string) {
