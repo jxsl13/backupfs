@@ -230,7 +230,8 @@ func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
 		oldPath, err = s.prefixPath(oldname)
 	} else {
 		// relative path symlink
-		oldPath, err = s.prefixPath(filepath.Join(filepath.Dir(oldname), newname))
+		_, err = s.prefixPath(filepath.Join(filepath.Dir(newname), oldname))
+		oldPath = oldname
 	}
 
 	if err != nil {
