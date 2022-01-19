@@ -517,7 +517,11 @@ func (fs *BackupFs) Create(name string) (File, error) {
 		return nil, &os.PathError{Op: "create", Path: name, Err: err}
 	}
 	// create or truncate file
-	return fs.base.Create(name)
+	file, err := fs.base.Create(name)
+	if err != nil {
+		return nil, &os.PathError{Op: "create", Path: name, Err: err}
+	}
+	return file, nil
 }
 
 // Mkdir creates a directory in the filesystem, return an error if any
@@ -532,7 +536,12 @@ func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
 	if err != nil {
 		return &os.PathError{Op: "mkdir", Path: name, Err: err}
 	}
-	return fs.base.Mkdir(name, perm)
+
+	err = fs.base.Mkdir(name, perm)
+	if err != nil {
+		return &os.PathError{Op: "mkdir", Path: name, Err: err}
+	}
+	return nil
 }
 
 // MkdirAll creates a directory path and all
@@ -548,7 +557,11 @@ func (fs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
 		return &os.PathError{Op: "mkdir_all", Path: name, Err: err}
 	}
 
-	return fs.base.MkdirAll(name, perm)
+	err = fs.base.MkdirAll(name, perm)
+	if err != nil {
+		return &os.PathError{Op: "mkdir_all", Path: name, Err: err}
+	}
+	return nil
 }
 
 // Open opens a file, returning it or an error, if any happens.
@@ -575,7 +588,11 @@ func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, err
 		return nil, &os.PathError{Op: "openfile", Path: name, Err: err}
 	}
 
-	return fs.base.OpenFile(name, flag, perm)
+	file, err := fs.base.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, &os.PathError{Op: "openfile", Path: name, Err: err}
+	}
+	return file, nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
@@ -591,7 +608,11 @@ func (fs *BackupFs) Remove(name string) error {
 		return &os.PathError{Op: "remove", Path: name, Err: err}
 	}
 
-	return fs.base.Remove(name)
+	err = fs.base.Remove(name)
+	if err != nil {
+		return &os.PathError{Op: "remove", Path: name, Err: err}
+	}
+	return nil
 }
 
 // RemoveAll removes a directory path and any children it contains. It
@@ -610,7 +631,11 @@ func (fs *BackupFs) RemoveAll(name string) error {
 
 	// if it's a file, directly remove it
 	if !fi.IsDir() {
-		return fs.Remove(name)
+		err = fs.Remove(name)
+		if err != nil {
+			return &os.PathError{Op: "remove_all", Path: name, Err: err}
+		}
+		return nil
 	}
 
 	directoryPaths := make([]string, 0, 1)
@@ -677,7 +702,11 @@ func (fs *BackupFs) Rename(oldname, newname string) error {
 		return &os.PathError{Op: "rename", Path: oldname, Err: err}
 	}
 
-	return fs.base.Rename(oldname, newname)
+	err = fs.base.Rename(oldname, newname)
+	if err != nil {
+		return &os.PathError{Op: "rename", Path: oldname, Err: err}
+	}
+	return nil
 }
 
 // Chmod changes the mode of the named file to mode.
@@ -692,7 +721,11 @@ func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
 		return &os.PathError{Op: "chmod", Path: name, Err: err}
 	}
 
-	return fs.base.Chmod(name, mode)
+	err = fs.base.Chmod(name, mode)
+	if err != nil {
+		return &os.PathError{Op: "chmod", Path: name, Err: err}
+	}
+	return nil
 }
 
 // Chown changes the uid and gid of the named file.
@@ -708,7 +741,11 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 	}
 
 	// TODO: do we want to ignore errors from Windows that this function is not supported by the OS?
-	return fs.base.Chown(name, uid, gid)
+	err = fs.base.Chown(name, uid, gid)
+	if err != nil {
+		return &os.PathError{Op: "chown", Path: name, Err: err}
+	}
+	return nil
 }
 
 //Chtimes changes the access and modification times of the named file
@@ -722,8 +759,11 @@ func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
 	if err != nil {
 		return &os.PathError{Op: "chtimes", Path: name, Err: err}
 	}
-
-	return fs.base.Chtimes(name, atime, mtime)
+	err = fs.base.Chtimes(name, atime, mtime)
+	if err != nil {
+		return &os.PathError{Op: "chtimes", Path: name, Err: err}
+	}
+	return nil
 }
 
 func (fs *BackupFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
@@ -828,7 +868,11 @@ func (fs *BackupFs) SymlinkIfPossible(oldname, newname string) error {
 	}
 
 	if linker, ok := fs.base.(afero.Linker); ok {
-		return linker.SymlinkIfPossible(oldname, newname)
+		err = linker.SymlinkIfPossible(oldname, newname)
+		if err != nil {
+			return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+		}
+		return nil
 	}
 	return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: afero.ErrNoSymlink}
 }
@@ -840,7 +884,11 @@ func (fs *BackupFs) ReadlinkIfPossible(name string) (string, error) {
 	}
 
 	if reader, ok := fs.base.(afero.LinkReader); ok {
-		return reader.ReadlinkIfPossible(name)
+		path, err := reader.ReadlinkIfPossible(name)
+		if err != nil {
+			return "", &os.PathError{Op: "readlink", Path: name, Err: err}
+		}
+		return path, nil
 	}
 	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
 }

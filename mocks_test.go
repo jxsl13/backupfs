@@ -103,7 +103,7 @@ func TestMockFsMkdir(t *testing.T) {
 
 	for _, d := range dirs {
 		err := fs.MkdirAll(d.Path, 0755)
-		require.Equal(err, d.Error)
+		require.Truef(errors.Is(err, d.Error), "expected error %v, got error %v", d.Error, err)
 		if err != nil {
 			internal.MustNotExist(t, backup, d.Path)
 		} else {
