@@ -105,7 +105,7 @@ func (fs *BackupFs) Rollback() error {
 		if info == nil {
 			// file did not exist in the base filesystem at the point of
 			// filesystem modification.
-			exists, err := internal.Exists(fs.base, path)
+			exists, err := internal.LExists(fs.base, path)
 			if err == nil && exists {
 				// we will need to delete this file
 				removeBaseFiles = append(removeBaseFiles, path)
