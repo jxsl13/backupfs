@@ -220,11 +220,22 @@ func (s *PrefixFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 //SymlinkIfPossible changes the access and modification times of the named file
 func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
 	// links may be relative paths
-	_, err := s.prefixPath(oldname)
-	if err != nil {
-		return err
+
+	var (
+		err     error
+		oldPath string
+	)
+	if filepath.IsAbs(oldname) {
+		// absolute path symlink
+		oldPath, err = s.prefixPath(oldname)
+	} else {
+		// relative path symlink
+		oldPath, err = s.prefixPath(filepath.Join(filepath.Dir(oldname), newname))
 	}
-	oldPath := filepath.Clean(oldname)
+
+	if err != nil {
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+	}
 
 	newPath, err := s.prefixPath(newname)
 	if err != nil {
