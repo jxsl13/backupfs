@@ -1,6 +1,6 @@
 module github.com/jxsl13/backupfs
 
-go 1.16
+go 1.13
 
 require (
 	github.com/golang/mock v1.6.0
