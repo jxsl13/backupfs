@@ -133,7 +133,7 @@ type SymlinkerFs interface {
 
 func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBaseFsNoSymlink, errBackupFsNoSymlink error) error {
 
-	if info.Mode().Type()&os.ModeSymlink == 0 {
+	if info.Mode()&os.ModeType&os.ModeSymlink == 0 {
 		return fmt.Errorf("%w: %s", ErrSymlinkInfoExpected, name)
 	}
 

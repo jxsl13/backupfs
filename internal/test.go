@@ -54,7 +54,7 @@ func SymlinkMustExist(t *testing.T, fs afero.Fs, symlinkPath string) {
 
 	require.Truef(lstatCalled, "lstat has no been called for: %s", symlinkPath)
 
-	hasSymlinkFlag := fi.Mode().Type()&os.ModeSymlink != 0
+	hasSymlinkFlag := fi.Mode()&os.ModeType&os.ModeSymlink != 0
 	require.Truef(hasSymlinkFlag, "target symlink does not have the symlink flag: %s", symlinkPath)
 
 	actualPointsTo, err := sf.ReadlinkIfPossible(symlinkPath)
@@ -78,7 +78,7 @@ func SymlinkMustExistWithTragetPath(t *testing.T, fs afero.Fs, symlinkPath, expe
 
 	require.True(lstatCalled, "lstat has no been called for: ", symlinkPath)
 
-	hasSymlinkFlag := fi.Mode().Type()&os.ModeSymlink != 0
+	hasSymlinkFlag := fi.Mode()&os.ModeType&os.ModeSymlink != 0
 	require.True(hasSymlinkFlag, "target symlink does not have the symlink flag: ", symlinkPath)
 
 	actualPointsTo, err := sf.ReadlinkIfPossible(symlinkPath)
@@ -187,7 +187,7 @@ func CreateSymlink(t *testing.T, fs afero.Fs, oldpath, newpath string) {
 
 	require.Truef(lstatCalled, "lstat has not been called but is expected to have been called (old -> new): %s -> %s", oldpath, newpath)
 
-	hasSymlinkFlag := fi.Mode().Type()&os.ModeSymlink != 0
+	hasSymlinkFlag := fi.Mode()&os.ModeType&os.ModeSymlink != 0
 	require.True(hasSymlinkFlag, "the target(newpath) symlink does not have the symlink flag set: ", newpath)
 
 	// check oldpath after creating the symlink
@@ -196,7 +196,7 @@ func CreateSymlink(t *testing.T, fs afero.Fs, oldpath, newpath string) {
 	case err == nil:
 		require.True(lstatCalled, "lstat has not been called but is expected to have been called (old -> new): %s -> %s", oldpath, newpath)
 
-		hasSymlinkFlag = fi.Mode().Type()&os.ModeSymlink != 0
+		hasSymlinkFlag = fi.Mode()&os.ModeType&os.ModeSymlink != 0
 		require.Falsef(hasSymlinkFlag, "the source (oldpath) symlink does have the symlink flag set but is expected not to have it set: %s", oldpath)
 	case os.IsNotExist(err):
 		// broken symlink that points to an invalid location may be created
