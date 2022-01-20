@@ -2,15 +2,15 @@ package internal
 
 import (
 	"errors"
-	"io/fs"
+	"os"
 	"syscall"
 )
 
-func Uid(from fs.FileInfo) int {
+func Uid(from os.FileInfo) int {
 	return -1
 }
 
-func Gid(from fs.FileInfo) int {
+func Gid(from os.FileInfo) int {
 	return -1
 }
 

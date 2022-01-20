@@ -1,11 +1,11 @@
 package internal
 
 import (
-	"io/fs"
+	"os"
 	"syscall"
 )
 
-func Uid(from fs.FileInfo) int {
+func Uid(from os.FileInfo) int {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		return int(stat.Uid)
 	}
@@ -13,7 +13,7 @@ func Uid(from fs.FileInfo) int {
 	return -1
 }
 
-func Gid(from fs.FileInfo) int {
+func Gid(from os.FileInfo) int {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		return int(stat.Gid)
 	}
@@ -24,4 +24,3 @@ func Gid(from fs.FileInfo) int {
 func IgnorableError(err error) error {
 	return err
 }
-

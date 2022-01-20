@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,7 +178,7 @@ func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBase
 }
 
 // Chown is an operating system dependent implementation.
-func Chown(from fs.FileInfo, toName string, fs afero.Fs) error {
+func Chown(from os.FileInfo, toName string, fs afero.Fs) error {
 
 	err := fs.Chown(toName, Uid(from), Gid(from))
 	if err != nil {
@@ -189,7 +188,7 @@ func Chown(from fs.FileInfo, toName string, fs afero.Fs) error {
 	return nil
 }
 
-func RestoreFile(name string, backupFi fs.FileInfo, base, backup afero.Fs) error {
+func RestoreFile(name string, backupFi os.FileInfo, base, backup afero.Fs) error {
 	f, err := backup.Open(name)
 	if err != nil {
 		// best effort, if backup was tempered with, we cannot restore the file.
@@ -229,7 +228,7 @@ func RestoreFile(name string, backupFi fs.FileInfo, base, backup afero.Fs) error
 	return nil
 }
 
-func RestoreSymlink(name string, backupFi fs.FileInfo, base, backup afero.Fs, errBaseFsNoSymlink, errBackupFsNoSymlink error) error {
+func RestoreSymlink(name string, backupFi os.FileInfo, base, backup afero.Fs, errBaseFsNoSymlink, errBackupFsNoSymlink error) error {
 	exists, err := LExists(backup, name)
 	if err != nil || !exists {
 		// best effort, if backup broken, we cannot restore
