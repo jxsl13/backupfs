@@ -75,6 +75,22 @@ type BackupFs struct {
 	mu        sync.Mutex
 }
 
+func (fs *BackupFs) GetBaseFs() afero.Fs {
+	return fs.base
+}
+
+func (fs *BackupFs) GetBackupFs() afero.Fs {
+	return fs.backup
+}
+
+func (fs *BackupFs) SetBaseFs(base afero.Fs) {
+	fs.base = base
+}
+
+func (fs *BackupFs) SetBackupFs(backup afero.Fs) {
+	fs.backup = backup
+}
+
 // The name of this FileSystem
 func (fs *BackupFs) Name() string {
 	return "BackupFs"
