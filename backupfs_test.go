@@ -535,3 +535,39 @@ func TestBackupFs_SymlinkIfPossible(t *testing.T) {
 	internal.MustNotLExist(t, backup, fileDirRoot+"/directory_symlink")
 
 }
+
+func TestBackupFs_Mkdir(t *testing.T) {
+
+	var (
+		require      = require.New(t)
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	base, backup, backupFs := NewTestTempdirBackupFs(basePrefix, backupPrefix)
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot = "/test"
+		fileDir     = "/test/001"
+		fileDir2    = "/test/001/002"
+	)
+
+	err := internal.Mkdir(t, base, fileDirRoot, 0755)
+	require.NoError(err)
+
+	err = internal.Mkdir(t, backupFs, fileDir2, 0755)
+	require.Error(err, "cannot create child directory without having created its parent")
+
+	err = internal.Mkdir(t, backupFs, fileDir, 0755)
+	require.NoError(err)
+
+	err = internal.Mkdir(t, backupFs, fileDir2, 0755)
+	require.NoError(err)
+
+	internal.RemoveAll(t, backupFs, fileDirRoot)
+
+	// /test existed in the base filesystem and has been removed at the end -> upon removal we backup this directory.
+	internal.MustLExist(t, backup, fileDirRoot)
+}

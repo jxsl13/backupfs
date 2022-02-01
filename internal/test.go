@@ -274,3 +274,21 @@ func MkdirAll(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
 	})
 	require.NoError(err)
 }
+
+func Mkdir(t *testing.T, fs afero.Fs, path string, perm os.FileMode) error {
+	path = filepath.Clean(path)
+
+	require := require.New(t)
+	err := fs.Mkdir(path, perm)
+	if err != nil {
+		// assert that it is indeed a path error
+		_, ok := err.(*os.PathError)
+		require.True(ok)
+		return err
+	}
+
+	b, err := LExists(fs, path)
+	require.NoError(err)
+	require.True(b, "directory: ", path, "must exist after it has been created but does not.")
+	return nil
+}
