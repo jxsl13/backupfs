@@ -242,7 +242,6 @@ type fInfo struct {
 	Name    string `json:"name"`
 	Mode    uint32 `json:"mode"`
 	ModTime int64  `json:"mod_time"`
-	IsDir   bool   `json:"is_dir"`
 	Uid     int    `json:"uid"`
 	Gid     int    `json:"gid"`
 }
@@ -263,7 +262,6 @@ func (fs *BackupFs) MarshalJSON() ([]byte, error) {
 			Name:    filepath.ToSlash(path),
 			Mode:    uint32(fi.Mode()),
 			ModTime: fi.ModTime().UnixNano(),
-			IsDir:   fi.IsDir(),
 			Uid:     internal.Uid(fi),
 			Gid:     internal.Gid(fi),
 		}
@@ -293,14 +291,14 @@ func (fs *BackupFs) UnmarshalJSON(data []byte) error {
 		}
 
 		var memFile *mem.FileData
-
-		if fi.IsDir {
+		mode := os.FileMode(fi.Mode)
+		if mode.IsDir() {
 			memFile = mem.CreateDir(fi.Name)
 		} else {
 			memFile = mem.CreateFile(fi.Name)
 		}
 
-		mem.SetMode(memFile, os.FileMode(fi.Mode))
+		mem.SetMode(memFile, mode)
 		mem.SetModTime(memFile, time.Unix(fi.ModTime/1000, fi.ModTime%1000))
 
 		if fi.Gid >= 0 {
