@@ -827,7 +827,7 @@ func (fs *BackupFs) trackedLstat(name string) (os.FileInfo, bool, error) {
 		lstatCalled = false
 	)
 
-	baseLstater, ok := internal.LstaterIfPossible(fs.base, name)
+	baseLstater, ok := internal.LstaterIfPossible(fs.base)
 	if ok {
 		fi, lstatCalled, err = baseLstater.LstatIfPossible(name)
 	} else {

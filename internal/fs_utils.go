@@ -105,7 +105,8 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 		return err
 	}
 
-	err = fs.Chmod(name, info.Mode())
+	mode := info.Mode()
+	err = fs.Chmod(name, mode)
 	if err != nil {
 		return err
 	}
@@ -282,7 +283,7 @@ func LExists(fs afero.Fs, path string) (bool, error) {
 }
 
 // Check if interface is implemented
-func LstaterIfPossible(fs afero.Fs, path string) (afero.Lstater, bool) {
+func LstaterIfPossible(fs afero.Fs) (afero.Lstater, bool) {
 	lstater, ok := fs.(afero.Lstater)
 	if ok {
 		return lstater, true
