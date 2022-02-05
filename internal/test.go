@@ -292,3 +292,34 @@ func Mkdir(t *testing.T, fs afero.Fs, path string, perm os.FileMode) error {
 	require.True(b, "directory: ", path, "must exist after it has been created but does not.")
 	return nil
 }
+
+func Chmod(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
+	path = filepath.Clean(path)
+	require := require.New(t)
+
+	exists, err := LExists(fs, path)
+	require.NoError(err)
+
+	if !exists {
+		err = fs.Chmod(path, perm)
+		require.Error(err)
+		return
+	}
+
+	// exists
+	baseLstater, isLstater := LstaterIfPossible(fs)
+
+	err = fs.Chmod(path, perm)
+	require.NoError(err)
+
+	fiAfter := os.FileInfo(nil)
+	if isLstater {
+		fiAfter, _, err = baseLstater.LstatIfPossible(path)
+	} else {
+		fiAfter, err = fs.Stat(path)
+	}
+
+	permAfter := fiAfter.Mode() & os.ModePerm
+	require.True(perm == permAfter)
+
+}

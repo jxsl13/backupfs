@@ -291,6 +291,27 @@ func LstaterIfPossible(fs afero.Fs) (afero.Lstater, bool) {
 	return nil, false
 }
 
+// LstatIfPossible uses Lstat or stat in case it is possible.
+// returns the fileinfo of the symlink or of the linked file or of the file in
+// case there is no symlink. The second return value returns true in case Lstat
+// was actually called, false otherwise.
+func LstatIfPossible(fs afero.Fs, path string) (os.FileInfo, bool, error) {
+	lstater, ok := fs.(afero.Lstater)
+	if ok {
+		fi, b, err := lstater.LstatIfPossible(path)
+		if fi == nil {
+			return nil, b, err
+		}
+		return fi, b, nil
+	}
+	fi, err := fs.Stat(path)
+	if fi == nil {
+		return nil, false, err
+	}
+
+	return fi, false, nil
+}
+
 // current OS filepath separator / or \
 const separator = string(filepath.Separator)
 

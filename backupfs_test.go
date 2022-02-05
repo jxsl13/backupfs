@@ -3,6 +3,7 @@ package backupfs
 import (
 	"encoding/json"
 	"log"
+	"os"
 	"sync"
 	"testing"
 
@@ -570,4 +571,32 @@ func TestBackupFs_Mkdir(t *testing.T) {
 
 	// /test existed in the base filesystem and has been removed at the end -> upon removal we backup this directory.
 	internal.MustLExist(t, backup, fileDirRoot)
+}
+
+func TestBackupFs_Chmod(t *testing.T) {
+	ResetTestMemMapFs()
+	var (
+		require      = require.New(t)
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot = "/test"
+		filePath    = fileDirRoot + "test_file_chmod.txt"
+	)
+	internal.CreateFile(t, base, filePath, "chmod test file")
+
+	expectedPerm := os.FileMode(0644)
+	internal.Chmod(t, backupFs, filePath, expectedPerm)
+
+	fi, _, err := internal.LstatIfPossible(backup, filePath)
+	require.NoError(err)
+
+	backedUpPerm := fi.Mode() & os.ModePerm
+	require.Equal(expectedPerm, backedUpPerm, "expected: %0o got: %0o", expectedPerm, backedUpPerm)
 }
