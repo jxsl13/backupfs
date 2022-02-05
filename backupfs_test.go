@@ -581,7 +581,8 @@ func TestBackupFs_Chmod(t *testing.T) {
 		backupPrefix = "/backup"
 	)
 
-	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+	// Afero.MemmapFs does not seem to properly implement chmod stuff.
+	base, backup, backupFs := NewTestTempdirBackupFs(basePrefix, backupPrefix)
 
 	var (
 		// different number of file path separators
@@ -597,6 +598,6 @@ func TestBackupFs_Chmod(t *testing.T) {
 	fi, _, err := internal.LstatIfPossible(backup, filePath)
 	require.NoError(err)
 
-	backedUpPerm := fi.Mode() & os.ModePerm
+	backedUpPerm := fi.Mode() & internal.ChmodBits
 	require.Equal(expectedPerm, backedUpPerm, "expected: %0o got: %0o", expectedPerm, backedUpPerm)
 }

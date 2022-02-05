@@ -318,8 +318,9 @@ func Chmod(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
 	} else {
 		fiAfter, err = fs.Stat(path)
 	}
+	require.NoError(err)
 
-	permAfter := fiAfter.Mode() & os.ModePerm
-	require.True(perm == permAfter)
+	permAfter := fiAfter.Mode() & ChmodBits
+	require.Equal(perm, permAfter, "expected: %0o got: %0o", perm, permAfter)
 
 }
