@@ -5,6 +5,9 @@ import (
 	"syscall"
 )
 
+// reference: os package
+var ChmodBits = os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+
 func Uid(from os.FileInfo) int {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		return int(stat.Uid)

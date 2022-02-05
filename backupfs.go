@@ -804,7 +804,7 @@ func (fs *BackupFs) lstatIfPossible(name string) (os.FileInfo, bool, error) {
 		}
 
 		// only in the case that we do not know the subdirectory already
-		// we do want to track th einitial state of the subdirectory.
+		// we do want to track the initial state of the sub directory.
 		// if it does not exist, it should not exist
 		_, _ = fs.trackedStat(subdirPath)
 		return nil
