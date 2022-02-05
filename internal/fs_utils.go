@@ -116,7 +116,6 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 		}
 	}
 
-	// chown only on ever other
 	// https://pkg.go.dev/os#Chown
 	// Windows & Plan9 not supported
 	err = IgnorableError(Chown(info, name, fs))
