@@ -296,8 +296,8 @@ func Mkdir(t *testing.T, fs afero.Fs, path string, perm os.FileMode) error {
 func ModeMustBeEqual(t *testing.T, a, b os.FileMode) {
 	require := require.New(t)
 
-	a |= ChmodBits
-	b |= ChmodBits
+	a &= ChmodBits
+	b &= ChmodBits
 
 	require.Equalf(a, b, "expected: %0o got: %0o", a, b)
 }
