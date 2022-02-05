@@ -598,6 +598,6 @@ func TestBackupFs_Chmod(t *testing.T) {
 	fi, _, err := internal.LstatIfPossible(backup, filePath)
 	require.NoError(err)
 
-	backedUpPerm := fi.Mode() & internal.ChmodBits
-	require.Equal(expectedPerm, backedUpPerm, "expected: %0o got: %0o", expectedPerm, backedUpPerm)
+	backedUpPerm := fi.Mode()
+	internal.ModeMustBeEqual(t, expectedPerm, backedUpPerm)
 }

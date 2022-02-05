@@ -293,6 +293,15 @@ func Mkdir(t *testing.T, fs afero.Fs, path string, perm os.FileMode) error {
 	return nil
 }
 
+func ModeMustBeEqual(t *testing.T, a, b os.FileMode) {
+	require := require.New(t)
+
+	a |= ChmodBits
+	b |= ChmodBits
+
+	require.Equalf(a, b, "expected: %0o got: %0o", a, b)
+}
+
 func Chmod(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
 	path = filepath.Clean(path)
 	require := require.New(t)
@@ -320,7 +329,7 @@ func Chmod(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
 	}
 	require.NoError(err)
 
-	permAfter := fiAfter.Mode() & ChmodBits
-	require.Equal(perm, permAfter, "expected: %0o got: %0o", perm, permAfter)
+	permAfter := fiAfter.Mode()
 
+	ModeMustBeEqual(t, perm, permAfter)
 }
