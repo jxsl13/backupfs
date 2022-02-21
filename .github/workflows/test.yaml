@@ -14,10 +14,8 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - name: Checkout code
       uses: actions/checkout@v2
-    - name: Test
-      run: go test ./... -race
     - name: Code Coverage
-      run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic
+      run: go clean -testcache && go test -timeout 30s -race -covermode=atomic -coverprofile=./coverage ./...
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v2
       with:
