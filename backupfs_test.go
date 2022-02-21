@@ -595,7 +595,7 @@ func TestBackupFs_Chmod(t *testing.T) {
 	// get initial permission bits
 	initialFi, _, err := internal.LstatIfPossible(base, filePath)
 	require.NoError(err)
-	initialPerm := initialFi.Mode().Perm()
+	initialMode := initialFi.Mode()
 
 	// change mod
 	expectedNewPerm := os.FileMode(0644)
@@ -607,5 +607,5 @@ func TestBackupFs_Chmod(t *testing.T) {
 
 	// compare backed up permissions to initial permissions
 	backedUpPerm := fi.Mode()
-	internal.ModeMustBeEqual(t, initialPerm, backedUpPerm)
+	internal.ModeMustBeEqual(t, initialMode, backedUpPerm)
 }
