@@ -588,16 +588,24 @@ func TestBackupFs_Chmod(t *testing.T) {
 		// different number of file path separators
 		// while still having the same number of characters in the filepath
 		fileDirRoot = "/test"
-		filePath    = fileDirRoot + "test_file_chmod.txt"
+		filePath    = fileDirRoot + "/test_file_chmod.txt"
 	)
 	internal.CreateFile(t, base, filePath, "chmod test file")
 
-	expectedPerm := os.FileMode(0644)
-	internal.Chmod(t, backupFs, filePath, expectedPerm)
+	// get initial permission bits
+	initialFi, _, err := internal.LstatIfPossible(base, filePath)
+	require.NoError(err)
+	initialPerm := initialFi.Mode().Perm()
 
+	// change mod
+	expectedNewPerm := os.FileMode(0644)
+	internal.Chmod(t, backupFs, filePath, expectedNewPerm)
+
+	// get backed up file permissions
 	fi, _, err := internal.LstatIfPossible(backup, filePath)
 	require.NoError(err)
 
+	// compare backed up permissions to initial permissions
 	backedUpPerm := fi.Mode()
-	internal.ModeMustBeEqual(t, expectedPerm, backedUpPerm)
+	internal.ModeMustBeEqual(t, initialPerm, backedUpPerm)
 }
