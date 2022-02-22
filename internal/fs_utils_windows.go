@@ -17,10 +17,12 @@ func Gid(from os.FileInfo) int {
 	return -1
 }
 
-// IgnorableError errors that are due to such functions not being implemented on windows
-func IgnorableError(err error) error {
-	if errors.Is(err, syscall.EWINDOWS) {
+// ignorableError errors that are due to such functions not being implemented on windows
+func ignorableError(err error) error {
+	switch {
+	case errors.Is(err, syscall.EWINDOWS):
 		return nil
+	default:
+		return err
 	}
-	return err
 }

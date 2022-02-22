@@ -15,6 +15,17 @@ var (
 	ErrSymlinkInfoExpected = errors.New("expecting a symlink file-info")
 	ErrDirInfoExpected     = errors.New("expecting a directory file-info")
 	ErrFileInfoExpected    = errors.New("expecting a file file-info")
+
+	// internal package does not expose these errors
+	ErrCopyFileFailed     = errors.New("failed to copy file")
+	errWrapCopyFileFailed = func(err error) error {
+		return fmt.Errorf("%w: %v", ErrCopyFileFailed, err)
+	}
+
+	ErrCopyDirFailed     = errors.New("failed to copy directory")
+	errWrapCopyDirFailed = func(err error) error {
+		return fmt.Errorf("%w: %v", ErrCopyDirFailed, err)
+	}
 )
 
 func IterateDirTree(name string, visitor func(string) error) error {
@@ -50,33 +61,64 @@ func IterateDirTree(name string, visitor func(string) error) error {
 	return nil
 }
 
+// IgnorableError is solely use din Chown
+func IgnorableError(err error) error {
+	// first check os-specific ignorable errors, like on windoes not implemented
+	err = ignorableError(err)
+	if err == nil {
+		return nil
+	}
+
+	// check is permission for chown is denied
+	// if no permission for chown, we don't chown
+	switch {
+	case errors.Is(err, os.ErrPermission):
+		return nil
+	default:
+		return err
+	}
+}
+
 func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%w: %s", ErrDirInfoExpected, name)
 	}
 
 	// try to create all dirs as somone might have tempered with the file system
-	err := fs.MkdirAll(name, info.Mode().Perm())
+	targetMode := info.Mode()
+	err := fs.MkdirAll(name, targetMode.Perm())
 	if err != nil {
 		return err
 	}
 
-	err = fs.Chmod(name, info.Mode())
+	newDirInfo, _, err := LstatIfPossible(fs, name)
 	if err != nil {
-		// TODO: do we want to fail here?
-		return err
+		return errWrapCopyDirFailed(err)
 	}
 
-	modTime := info.ModTime()
-	err = fs.Chtimes(name, modTime, modTime)
-	if err != nil {
-		// TODO: do we want to fail here?
-		return err
+	currentMode := newDirInfo.Mode()
+
+	if !EqualMode(currentMode, targetMode) {
+		err = fs.Chmod(name, targetMode)
+		if err != nil {
+			// TODO: do we want to fail here?
+			return err
+		}
+	}
+
+	targetModTime := info.ModTime()
+	currentModTime := newDirInfo.ModTime()
+	if !currentModTime.Equal(targetModTime) {
+		err = fs.Chtimes(name, targetModTime, targetModTime)
+		if err != nil {
+			// TODO: do we want to fail here?
+			return err
+		}
 	}
 
 	// chown only on ever other
 	// https://pkg.go.dev/os#Chown
-	// Windows & PLan9 not supported
+	// Windows & Plan9 not supported
 	err = IgnorableError(Chown(info, name, fs))
 	if err != nil {
 		return err
@@ -89,39 +131,54 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: %s", ErrFileInfoExpected, name)
 	}
+	//
+	targetMode := info.Mode()
+
 	// same as create but with custom permissions
-	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, targetMode.Perm())
 	if err != nil {
-		return err
+		return errWrapCopyFileFailed(err)
 	}
 
 	_, err = io.Copy(file, sourceFile)
 	if err != nil {
-		return err
+		return errWrapCopyFileFailed(err)
 	}
 
 	err = file.Close()
 	if err != nil {
-		return err
+		return errWrapCopyFileFailed(err)
 	}
 
-	mode := info.Mode()
-	err = fs.Chmod(name, mode)
+	newFileInfo, _, err := LstatIfPossible(fs, name)
 	if err != nil {
-		return err
+		return errWrapCopyFileFailed(err)
 	}
 
-	modTime := info.ModTime()
-	err = fs.Chtimes(name, modTime, modTime)
-	if err != nil {
-		return err
+	if !EqualMode(newFileInfo.Mode(), targetMode) {
+		// not equal, update it
+		err = fs.Chmod(name, targetMode)
+		if err != nil {
+			return errWrapCopyFileFailed(err)
+		}
+	}
+
+	targetModTime := info.ModTime()
+	currentModTime := newFileInfo.ModTime()
+
+	if !currentModTime.Equal(targetModTime) {
+		err = fs.Chtimes(name, targetModTime, targetModTime)
+		if err != nil {
+			return errWrapCopyFileFailed(err)
+		}
 	}
 
 	// might cause a windows error that this function is not implemented by the OS
 	// in a unix fassion
+	// permission and not implemented errors are ignored
 	err = IgnorableError(Chown(info, name, fs))
 	if err != nil {
-		return err
+		return errWrapCopyFileFailed(err)
 	}
 
 	return nil
@@ -179,13 +236,27 @@ func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBase
 }
 
 // Chown is an operating system dependent implementation.
+// only tries to change owner in cas ethat the owner differs
 func Chown(from os.FileInfo, toName string, fs afero.Fs) error {
 
-	err := fs.Chown(toName, Uid(from), Gid(from))
+	oldOwnerFi, _, err := LstatIfPossible(fs, toName)
 	if err != nil {
-		return err
+		return fmt.Errorf("lstat for chown failed: %w", err)
 	}
 
+	oldUid := Uid(oldOwnerFi)
+	oldGid := Gid(oldOwnerFi)
+
+	newUid := Uid(from)
+	newGid := Gid(from)
+
+	// only update when something changed
+	if oldUid != newUid || oldGid != newGid {
+		err = fs.Chown(toName, Uid(from), Gid(from))
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
