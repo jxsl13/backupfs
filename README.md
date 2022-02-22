@@ -1,18 +1,32 @@
 
 # BackupFs
 
-This package provides two filesystem abstractions which both implement the spf13/afero interface.
+Two filesystem abstraction layers working together to create a straight forward rollback mechanism for filesystem modifications.
+
+Requires the filesystem modifications to happen via the provided structs of this package.
+
+## PrefixFs
+
+This package provides two filesystem abstractions which both implement the spf13/afer.Fs interface as well as the optional interfaces.
 Firstly, a struct called `PrefixFs`. As the name already suggests, PrefixFS forces a filesystem to have a specific prefix.
 Any attempt to escape the prefix path by directory traversal is prevented, forcing the application to stay within the designated prefix directory.
+
+## BackupFs
 
 The second and more important part of this library is `BackupFs`.
 It is a filesystem abstraction that consists of two parts.
 A base filesystem and a backup filesystem.
-Any attempt to modify a file in the base filesystem leads to the file being backed up to the backup filesystem.
+Any attempt to modify a file, directory or symlink in the base filesystem leads to the file being backed up to the backup filesystem.
 
 Consecutive file modifications are ignored, as the initial file state has already been backed up.
 
-Example
+## Example
+
+We create a base filesystem with an initial file in it.
+Then we define a backup filesystem as subdirectory of the base filesystem.
+
+Then we do wrap the base filesystem and the backup filesystem in the `BackupFs` wrapper and try modifying the file through the `BackupFs` file system layer which has initiall ybeen created in the base filesystem. So `BackupFs` tries to modify an already existing file leading to it being backedup. A call to `BackupFs.Rollback()` allows to rollback the filesystem modifications done with `BackupFs` back to its original state while also deleting the backup.
+
 ```go
 package main
 
@@ -98,6 +112,3 @@ func main() {
 }
 ```
 
-Small roadmap:
-
-- testing of the backup fs with memory mapped fs
