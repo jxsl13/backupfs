@@ -1,4 +1,5 @@
 
+.PHONY test coverage fuzz fmt
 
 test:
 	go clean -testcache && go test ./... -race -timeout 30s
