@@ -18,6 +18,21 @@ var (
 	resetMu sync.Mutex
 )
 
+// we need to extend the afero OsFs with our LchownIfPossible method for the tests.
+type osFs struct {
+	*afero.OsFs
+}
+
+func (fs osFs) LchownIfPossible(name string, uid, gid int) error {
+	return os.Lchown(name, uid, gid)
+}
+
+func newOsFs() afero.Fs {
+	return &osFs{
+		&afero.OsFs{},
+	}
+}
+
 func NewTestMemMapFs() afero.Fs {
 	mo.Do(func() {
 		resetMu.Lock()
@@ -41,7 +56,7 @@ func NewTestPrefixFs(prefix string) *PrefixFs {
 // this helper function is needed in order to test on the local filesystem
 // and not in memory
 func NewTempdirPrefixFs(prefix string) *PrefixFs {
-	osFs := afero.NewOsFs()
+	osFs := newOsFs()
 
 	prefix, err := afero.TempDir(osFs, "", prefix)
 	if err != nil {

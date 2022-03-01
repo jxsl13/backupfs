@@ -186,6 +186,7 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 type SymlinkerFs interface {
 	afero.Fs
 	afero.Symlinker
+	LinkOwner
 }
 
 func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBaseFsNoSymlink, errBackupFsNoSymlink error) error {
@@ -214,24 +215,7 @@ func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBase
 		return err
 	}
 
-	/*
-		FIXME: these follow the link and this do not modify the actual symlink
-		// Chmod for symlinks seems not to make sense as the symlink just points at something.
-		// Chtimes doe snot seem to apply to symlinks as well
-		modTime := info.ModTime()
-		err = backupFs.Chtimes(name, modTime, modTime)
-		if err != nil {
-			return err
-		}
-
-		// This is the only function implemented by the os package.
-		err = Chown(info, name, backupFs)
-		if err != nil {
-			return err
-		}
-	*/
-
-	return nil
+	return IgnorableError(backupFs.LchownIfPossible(name, Uid(info), Gid(info)))
 }
 
 // Chown is an operating system dependent implementation.
@@ -380,6 +364,16 @@ func LstatIfPossible(fs afero.Fs, path string) (os.FileInfo, bool, error) {
 	}
 
 	return fi, false, nil
+}
+
+// tries lchown, does not guarantee success
+func LchownIfPossible(fs afero.Fs, name string, uid, gid int) error {
+	linkOwner, ok := fs.(LinkOwner)
+	if !ok {
+		return nil
+	}
+
+	return linkOwner.LchownIfPossible(name, uid, gid)
 }
 
 // current OS filepath separator / or \

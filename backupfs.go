@@ -902,26 +902,24 @@ func (fs *BackupFs) ReadlinkIfPossible(name string) (string, error) {
 	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
 }
 
-func (fs *BackupFs) LchownIfPossible(name string, uid, gid int) (bool, error) {
+// LchownIfPossible does not fallback to chown. It does return an error in case that lchown cannot be called.
+func (fs *BackupFs) LchownIfPossible(name string, uid, gid int) error {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return false, err
+		return &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
+	}
+
+	linkOwner, ok := fs.base.(LinkOwner)
+	if !ok {
+		return &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("base fs: %w", internal.ErrNoLchown)}
 	}
 
 	//TODO: check if the owner stays equal and then backup the file if the owner changes
 	// at this point we do modify the owner -> require backup
 	err = fs.tryBackup(name)
 	if err != nil {
-		return false, &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
+		return &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	if linkOwner, ok := fs.base.(LinkOwner); ok {
-		return linkOwner.LchownIfPossible(name, uid, gid)
-	}
-
-	err = fs.Chown(name, uid, gid)
-	if err != nil {
-		return false, &os.PathError{Op: "lchown", Path: name, Err: err}
-	}
-	return false, nil
+	return linkOwner.LchownIfPossible(name, uid, gid)
 }
