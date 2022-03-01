@@ -10,3 +10,7 @@ func EqualMode(a, b os.FileMode) bool {
 
 	return a == b
 }
+
+func EqualOwner(a os.FileInfo, uid, gid int) bool {
+	return Uid(a) == uid && Gid(a) == gid
+}

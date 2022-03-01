@@ -14,6 +14,7 @@ import (
 var (
 	_ afero.Fs        = (*PrefixFs)(nil)
 	_ afero.Symlinker = (*PrefixFs)(nil)
+	_ LinkOwner       = (*PrefixFs)(nil)
 )
 
 // NewPrefixFs creates a new file system abstraction that forces any path to be prepended with
@@ -269,4 +270,16 @@ func (s *PrefixFs) ReadlinkIfPossible(name string) (string, error) {
 	}
 
 	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
+}
+
+func (s *PrefixFs) LchownIfPossible(name string, uid, gid int) (bool, error) {
+	name, err := s.prefixPath(name)
+	if err != nil {
+		return false, err
+	}
+
+	if linkOwner, ok := s.base.(LinkOwner); ok {
+		return linkOwner.LchownIfPossible(name, uid, gid)
+	}
+	return false, s.base.Chown(name, uid, gid)
 }

@@ -22,6 +22,7 @@ var (
 	// assert interfaces implemented
 	_ afero.Fs        = (*BackupFs)(nil)
 	_ afero.Symlinker = (*BackupFs)(nil)
+	_ LinkOwner       = (*BackupFs)(nil)
 
 	// ErrRollbackFailed is returned when the rollback fails due to e.g. network problems.
 	// when this error is returned it might make sense to retry the rollback
@@ -899,4 +900,28 @@ func (fs *BackupFs) ReadlinkIfPossible(name string) (string, error) {
 		return path, nil
 	}
 	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
+}
+
+func (fs *BackupFs) LchownIfPossible(name string, uid, gid int) (bool, error) {
+	name, err := fs.realPath(name)
+	if err != nil {
+		return false, err
+	}
+
+	//TODO: check if the owner stays equal and then backup the file if the owner changes
+	// at this point we do modify the owner -> require backup
+	err = fs.tryBackup(name)
+	if err != nil {
+		return false, &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
+	}
+
+	if linkOwner, ok := fs.base.(LinkOwner); ok {
+		return linkOwner.LchownIfPossible(name, uid, gid)
+	}
+
+	err = fs.Chown(name, uid, gid)
+	if err != nil {
+		return false, &os.PathError{Op: "lchown", Path: name, Err: err}
+	}
+	return false, nil
 }
