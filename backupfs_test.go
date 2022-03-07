@@ -183,7 +183,7 @@ func TestBackupFsRemoveAll(t *testing.T) {
 		basePrefix   = "/base"
 		backupPrefix = "/backup"
 	)
-	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+	base, backup, backupFs := NewTestTempdirBackupFs(basePrefix, backupPrefix)
 
 	var (
 		// different number of file path separators
@@ -191,17 +191,27 @@ func TestBackupFsRemoveAll(t *testing.T) {
 		fileDirRoot = "/test"
 		fileDir     = "/test/001"
 		fileDir2    = "/test/0/2"
+		symlinkDir  = "/test/sym"
 		fileContent = "test_content"
 	)
 
 	internal.MkdirAll(t, base, fileDir, 0755)
 	internal.MkdirAll(t, base, fileDir2, 0755)
+	internal.MkdirAll(t, base, symlinkDir, 0755)
 
 	internal.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
 	internal.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
 	internal.CreateFile(t, base, fileDir2+"/test03.txt", fileContent)
 	internal.CreateFile(t, base, fileDir2+"/test04.txt", fileContent)
 
+	// symlink pointing at random location that doesnot exist
+	internal.CreateSymlink(t, base, fileDir+"/test00.txt", symlinkDir+"/link")
+	internal.CreateSymlink(t, base, fileDir+"/test00.txt", symlinkDir+"/link2")
+
+	internal.RemoveAll(t, backupFs, symlinkDir+"/link")
+	internal.MustNotLExist(t, backupFs, symlinkDir+"/link")
+
+	// remove /test dir
 	internal.RemoveAll(t, backupFs, fileDirRoot)
 	internal.MustNotExist(t, backupFs, fileDirRoot)
 
@@ -210,6 +220,10 @@ func TestBackupFsRemoveAll(t *testing.T) {
 	internal.MustNotExist(t, base, fileDir+"/test02.txt")
 	internal.MustNotExist(t, base, fileDir2+"/test03.txt")
 	internal.MustNotExist(t, base, fileDir2+"/test04.txt")
+
+	// link2 is a symlink in one of the sub folders in the
+	// directory that is being removed with all of its content
+	internal.MustNotLExist(t, backupFs, symlinkDir+"/link2")
 
 	internal.MustNotExist(t, base, fileDirRoot)
 	internal.MustNotExist(t, base, fileDir)

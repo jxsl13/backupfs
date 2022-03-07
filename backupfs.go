@@ -633,12 +633,12 @@ func (fs *BackupFs) RemoveAll(name string) error {
 		return &os.PathError{Op: "remove_all", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	fi, err := fs.Stat(name)
+	fi, _, err := fs.LstatIfPossible(name)
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: err}
 	}
 
-	// if it's a file, directly remove it
+	// if it's a file or a symlink, directly remove it
 	if !fi.IsDir() {
 		err = fs.Remove(name)
 		if err != nil {
