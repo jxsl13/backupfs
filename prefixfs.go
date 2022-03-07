@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
 )
 
@@ -272,14 +273,14 @@ func (s *PrefixFs) ReadlinkIfPossible(name string) (string, error) {
 	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
 }
 
-func (s *PrefixFs) LchownIfPossible(name string, uid, gid int) (bool, error) {
+func (s *PrefixFs) LchownIfPossible(name string, uid, gid int) error {
 	name, err := s.prefixPath(name)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if linkOwner, ok := s.base.(LinkOwner); ok {
 		return linkOwner.LchownIfPossible(name, uid, gid)
 	}
-	return false, s.base.Chown(name, uid, gid)
+	return &os.PathError{Op: "lchown", Path: name, Err: internal.ErrNoLchown}
 }

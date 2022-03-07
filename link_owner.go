@@ -1,6 +1,7 @@
 package backupfs
 
-// A LinkOwner is a filesystem that is able to change the ownership of symlinks.
+// LinkOwner is an optional interface in Afero. It is only implemented by the
+// filesystems saying so.
 type LinkOwner interface {
-	LchownIfPossible(path string, uid int, gid int) (bool, error)
+	LchownIfPossible(name string, uid int, gid int) error
 }
