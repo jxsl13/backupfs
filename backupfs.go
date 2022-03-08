@@ -583,7 +583,7 @@ func (fs *BackupFs) Open(name string) (File, error) {
 func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	name, err := fs.realPath(name)
 	if err != nil {
-		return nil, &os.PathError{Op: "openfile", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
+		return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
 	if flag == os.O_RDONLY {
@@ -594,12 +594,12 @@ func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, err
 	// not read only opening -> backup
 	err = fs.tryBackup(name)
 	if err != nil {
-		return nil, &os.PathError{Op: "openfile", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
+		return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
 	file, err := fs.base.OpenFile(name, flag, perm)
 	if err != nil {
-		return nil, &os.PathError{Op: "openfile", Path: name, Err: fmt.Errorf("openfile failed: %w", err)}
+		return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("open failed: %w", err)}
 	}
 	return file, nil
 }
