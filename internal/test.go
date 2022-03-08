@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -332,4 +333,16 @@ func Chmod(t *testing.T, fs afero.Fs, path string, perm os.FileMode) {
 	permAfter := fiAfter.Mode()
 
 	ModeMustBeEqual(t, perm, permAfter)
+}
+
+func CountFiles(t *testing.T, fs afero.Fs, path string, expectedFilesAndDirs int) {
+	require := require.New(t)
+	path = filepath.Clean(path)
+
+	files, err := AllFiles(fs, path)
+	require.NoError(err)
+
+	sort.Strings(files)
+
+	require.Equalf(expectedFilesAndDirs, len(files), "files: %v", files)
 }

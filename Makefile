@@ -9,9 +9,11 @@ coverage:
 	go clean -testcache && go test ./... -timeout 30s -race -covermode=atomic -coverprofile=coverage.txt
 	rm ./coverage.txt
 
-fuzz:
-	gotip clean -testcache && gotip test -fuzz=Fuzz -race -fuzztime=30s
+fuzz_prefixfs:
+	gotip clean -testcache && gotip test -fuzz=FuzzPrefixFs -race -fuzztime=300s
 
+fuzz_hiddenfs:
+	gotip clean -testcache && gotip test -fuzz=FuzzHiddenFsCreate -race -fuzztime=300s
 
 fmt:
 	go fmt ./...
