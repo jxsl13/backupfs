@@ -69,7 +69,7 @@ func AllFiles(fs afero.Fs, dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		files = append(files, info.Name())
+		files = append(files, filepath.Join(path, info.Name()))
 		return nil
 	})
 	if err != nil {
