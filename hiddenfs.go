@@ -1,6 +1,7 @@
 package backupfs
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,12 @@ var (
 	_ afero.Fs        = (*HiddenFs)(nil)
 	_ afero.Symlinker = (*HiddenFs)(nil)
 	_ LinkOwner       = (*HiddenFs)(nil)
+
+	ErrHiddenNotExist        = fmt.Errorf("hidden: %w", os.ErrNotExist)
+	ErrHiddenPermission      = fmt.Errorf("hidden: %w", os.ErrPermission)
+	wrapErrHiddenCheckFailed = func(err error) error {
+		return fmt.Errorf("hidden check failed: %w", err)
+	}
 )
 
 // NewHiddenFs hides away anthing beneath the specified paths.
@@ -56,10 +63,10 @@ func (fs *HiddenFs) isHidden(name string) (bool, error) {
 func (s *HiddenFs) Create(name string) (File, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return nil, &os.PathError{Op: "create", Path: name, Err: err}
+		return nil, &os.PathError{Op: "create", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return nil, &os.PathError{Op: "create", Path: name, Err: os.ErrPermission}
+		return nil, &os.PathError{Op: "create", Path: name, Err: ErrHiddenPermission}
 	}
 	return s.base.Create(name)
 }
@@ -69,10 +76,10 @@ func (s *HiddenFs) Create(name string) (File, error) {
 func (s *HiddenFs) Mkdir(name string, perm os.FileMode) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "mkdir", Path: name, Err: err}
+		return &os.PathError{Op: "mkdir", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "mkdir", Path: name, Err: os.ErrPermission}
+		return &os.PathError{Op: "mkdir", Path: name, Err: ErrHiddenPermission}
 	}
 	return s.base.Mkdir(name, perm)
 }
@@ -82,10 +89,10 @@ func (s *HiddenFs) Mkdir(name string, perm os.FileMode) error {
 func (s *HiddenFs) MkdirAll(name string, perm os.FileMode) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "mkdir_all", Path: name, Err: err}
+		return &os.PathError{Op: "mkdir_all", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "mkdir_all", Path: name, Err: os.ErrPermission}
+		return &os.PathError{Op: "mkdir_all", Path: name, Err: ErrHiddenPermission}
 	}
 
 	return s.base.MkdirAll(name, perm)
@@ -101,10 +108,10 @@ func (s *HiddenFs) Open(name string) (File, error) {
 func (s *HiddenFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: name, Err: err}
+		return nil, &os.PathError{Op: "open", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return nil, &os.PathError{Op: "open", Path: name, Err: os.ErrNotExist}
+		return nil, &os.PathError{Op: "open", Path: name, Err: ErrHiddenNotExist}
 	}
 	f, err := s.base.Open(name)
 	if err != nil || f == nil {
@@ -119,10 +126,10 @@ func (s *HiddenFs) OpenFile(name string, flag int, perm os.FileMode) (File, erro
 func (s *HiddenFs) Remove(name string) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "remove", Path: name, Err: err}
+		return &os.PathError{Op: "remove", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "remove", Path: name, Err: os.ErrNotExist}
+		return &os.PathError{Op: "remove", Path: name, Err: ErrHiddenNotExist}
 	}
 
 	return s.base.Remove(name)
@@ -133,10 +140,10 @@ func (s *HiddenFs) Remove(name string) error {
 func (s *HiddenFs) RemoveAll(name string) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "remove_all", Path: name, Err: err}
+		return &os.PathError{Op: "remove_all", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "remove_all", Path: name, Err: os.ErrNotExist}
+		return &os.PathError{Op: "remove_all", Path: name, Err: ErrHiddenNotExist}
 	}
 
 	fi, _, err := s.LstatIfPossible(name)
@@ -161,7 +168,7 @@ func (s *HiddenFs) RemoveAll(name string) error {
 
 		hidden, err := s.isHidden(path)
 		if err != nil {
-			return err
+			return wrapErrHiddenCheckFailed(err)
 		}
 		if hidden {
 			// we do not touch hidden
@@ -181,18 +188,18 @@ func (s *HiddenFs) RemoveAll(name string) error {
 func (s *HiddenFs) Rename(oldname, newname string) error {
 	hidden, err := s.isHidden(oldname)
 	if err != nil {
-		return &os.PathError{Op: "rename", Path: oldname, Err: err}
+		return &os.PathError{Op: "rename", Path: oldname, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "rename", Path: oldname, Err: os.ErrNotExist}
+		return &os.PathError{Op: "rename", Path: oldname, Err: ErrHiddenNotExist}
 	}
 
 	hidden, err = s.isHidden(newname)
 	if err != nil {
-		return &os.PathError{Op: "rename", Path: newname, Err: err}
+		return &os.PathError{Op: "rename", Path: newname, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "rename", Path: newname, Err: os.ErrPermission}
+		return &os.PathError{Op: "rename", Path: newname, Err: ErrHiddenPermission}
 	}
 
 	return s.base.Rename(oldname, newname)
@@ -203,10 +210,10 @@ func (s *HiddenFs) Rename(oldname, newname string) error {
 func (s *HiddenFs) Stat(name string) (os.FileInfo, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return nil, &os.PathError{Op: "stat", Path: name, Err: err}
+		return nil, &os.PathError{Op: "stat", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return nil, &os.PathError{Op: "stat", Path: name, Err: os.ErrNotExist}
+		return nil, &os.PathError{Op: "stat", Path: name, Err: ErrHiddenNotExist}
 	}
 	return s.base.Stat(name)
 }
@@ -220,10 +227,10 @@ func (s *HiddenFs) Name() string {
 func (s *HiddenFs) Chmod(name string, mode os.FileMode) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "chmod", Path: name, Err: err}
+		return &os.PathError{Op: "chmod", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "chmod", Path: name, Err: os.ErrNotExist}
+		return &os.PathError{Op: "chmod", Path: name, Err: ErrHiddenNotExist}
 	}
 
 	return s.base.Chmod(name, mode)
@@ -233,10 +240,10 @@ func (s *HiddenFs) Chmod(name string, mode os.FileMode) error {
 func (s *HiddenFs) Chown(name string, uid, gid int) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "chown", Path: name, Err: err}
+		return &os.PathError{Op: "chown", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "chown", Path: name, Err: os.ErrNotExist}
+		return &os.PathError{Op: "chown", Path: name, Err: ErrHiddenNotExist}
 	}
 	return s.base.Chown(name, uid, gid)
 }
@@ -245,10 +252,10 @@ func (s *HiddenFs) Chown(name string, uid, gid int) error {
 func (s *HiddenFs) Chtimes(name string, atime, mtime time.Time) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "chtimes", Path: name, Err: err}
+		return &os.PathError{Op: "chtimes", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "chtimes", Path: name, Err: os.ErrNotExist}
+		return &os.PathError{Op: "chtimes", Path: name, Err: ErrHiddenNotExist}
 	}
 	return s.base.Chtimes(name, atime, mtime)
 }
@@ -259,10 +266,10 @@ func (s *HiddenFs) Chtimes(name string, atime, mtime time.Time) error {
 func (s *HiddenFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: err}
+		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: os.ErrNotExist}
+		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: ErrHiddenNotExist}
 	}
 
 	var (
@@ -284,18 +291,18 @@ func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
 	// not allowed to symlink into hidden directory
 	hidden, err := s.isHidden(oldname)
 	if err != nil {
-		return &os.PathError{Op: "symlink", Path: oldname, Err: err}
+		return &os.PathError{Op: "symlink", Path: oldname, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "symlink", Path: oldname, Err: os.ErrPermission}
+		return &os.PathError{Op: "symlink", Path: oldname, Err: ErrHiddenPermission}
 	}
 
 	hidden, err = s.isHidden(newname)
 	if err != nil {
-		return &os.PathError{Op: "symlink", Path: newname, Err: err}
+		return &os.PathError{Op: "symlink", Path: newname, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "symlink", Path: newname, Err: os.ErrPermission}
+		return &os.PathError{Op: "symlink", Path: newname, Err: ErrHiddenPermission}
 	}
 
 	if linker, ok := s.base.(afero.Linker); ok {
@@ -311,16 +318,16 @@ func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
 func (s *HiddenFs) ReadlinkIfPossible(name string) (string, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return "", &os.PathError{Op: "readlink", Path: name, Err: err}
+		return "", &os.PathError{Op: "readlink", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return "", &os.PathError{Op: "readlink", Path: name, Err: os.ErrNotExist}
+		return "", &os.PathError{Op: "readlink", Path: name, Err: ErrHiddenNotExist}
 	}
 
 	if reader, ok := s.base.(afero.LinkReader); ok {
 		path, err := reader.ReadlinkIfPossible(name)
 		if err != nil {
-			return "", &os.PathError{Op: "readlink", Path: name, Err: err}
+			return "", &os.PathError{Op: "readlink", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 		}
 		return path, nil
 	}
@@ -331,10 +338,10 @@ func (s *HiddenFs) ReadlinkIfPossible(name string) (string, error) {
 func (s *HiddenFs) LchownIfPossible(name string, uid, gid int) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return &os.PathError{Op: "lchown", Path: name, Err: err}
+		return &os.PathError{Op: "lchown", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "lchown", Path: name, Err: os.ErrNotExist}
+		return &os.PathError{Op: "lchown", Path: name, Err: ErrHiddenNotExist}
 	}
 
 	linkOwner, ok := s.base.(LinkOwner)
