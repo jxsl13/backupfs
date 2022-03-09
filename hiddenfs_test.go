@@ -185,3 +185,44 @@ func TestHiddenFsRemoveAll(t *testing.T) {
 	internal.CountFiles(t, base, hiddenDir, 2)
 	internal.CountFiles(t, fs, hiddenDirParent, 1)
 }
+
+func TestHiddenFsSymlinkIfPossible(t *testing.T) {
+	require := require.New(t)
+
+	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupTempDirHiddenFsTest(t)
+
+	var (
+		oldpath = filepath.Join(hiddenDirParent, "oldpath")
+		newpath = filepath.Join(hiddenDirParent, "newpath")
+
+		hiddenNewpath = filepath.Join(hiddenDir, "newpath")
+	)
+
+	internal.CreateFile(t, fs, oldpath, "text")
+
+	// cannot create symlink i hidden dir
+	err := fs.SymlinkIfPossible(oldpath, hiddenDir)
+	require.ErrorIs(err, os.ErrPermission)
+
+	err = fs.SymlinkIfPossible(oldpath, hiddenNewpath)
+	require.ErrorIs(err, os.ErrPermission)
+
+	// cannot symlink into hidden dir
+	err = fs.SymlinkIfPossible(filepath.Join(hiddenDir, hiddenFile), newpath)
+	require.ErrorIs(err, os.ErrPermission)
+
+	// cannot symlink into hidden dir via relative path
+	err = fs.SymlinkIfPossible(filepath.Join("../../var/opt/backups", hiddenFile), newpath)
+	require.ErrorIs(err, os.ErrPermission)
+
+	// able to create symlinks outside of hidden dir
+	err = fs.SymlinkIfPossible("../parentdirfile", newpath+"-1")
+	require.NoError(err)
+
+	err = fs.SymlinkIfPossible(hiddenDirParent, newpath+"-2")
+	require.NoError(err)
+
+	// at the end the hidden directory should containthe same number of files as before
+	internal.CountFiles(t, base, hiddenDir, 2)
+	internal.CountFiles(t, fs, hiddenDirParent, 4)
+}
