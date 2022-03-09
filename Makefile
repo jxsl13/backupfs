@@ -6,7 +6,7 @@ test:
 	go clean -testcache && go test ./... -race -timeout 30s
 
 coverage:
-	go clean -testcache && go test ./... -timeout 30s -race -covermode=atomic -coverprofile=coverage.txt
+	-go clean -testcache && go test ./... -timeout 30s -race -covermode=atomic -coverprofile=coverage.txt
 	rm ./coverage.txt
 
 fuzz_prefixfs:

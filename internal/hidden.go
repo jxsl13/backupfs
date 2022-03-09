@@ -26,10 +26,10 @@ func IsHidden(name string, hiddenPaths []string) (bool, error) {
 
 		// no ../ prefix
 		// -> does not lie outside of hidden dir
-		insideOfHiddenDir := !strings.HasPrefix(relPath, "../")
-		isNotParentDir := relPath != ".."
+		outsideOfHiddenDir := strings.HasPrefix(relPath, "../")
+		isParentDir := relPath == ".."
 
-		if insideOfHiddenDir && isNotParentDir {
+		if !outsideOfHiddenDir && !isParentDir {
 			return true, nil
 		}
 
