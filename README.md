@@ -5,6 +5,8 @@ Two filesystem abstraction layers working together to create a straight forward 
 
 Requires the filesystem modifications to happen via the provided structs of this package.
 
+And a third filesystem abstraction layer that will prevent you from shooting your own foot in case both your backup location as well as your to be backed up filesystem work on the same underlying filesystem where the backup location might be a subfolder of your to be backed up filesystem.
+
 ## PrefixFs
 
 This package provides two filesystem abstractions which both implement the spf13/afer.Fs interface as well as the optional interfaces.
@@ -19,6 +21,48 @@ A base filesystem and a backup filesystem.
 Any attempt to modify a file, directory or symlink in the base filesystem leads to the file being backed up to the backup filesystem.
 
 Consecutive file modifications are ignored, as the initial file state has already been backed up.
+
+## HiddenFs
+
+HiddenFs has a single purpose, that is to hide your backup location and prevent your application from seeing or modifying it.
+In case you use BackupFs to backup files that are overwritten on your operating system filesystem (OsFs), you want to define multiple filesystem layers that work together to prevent you from creating a non-terminating recursion of file backups.
+
+- The first layer is the underlying real filesystem, be it the OsFs, MemMapFs, etc.
+- The second layer is a PrefixFs that is provided a prefix path (backup directory location) and the above instantiated filesystem (e.g. OsFs)
+- The third layer is HiddenFs which takes the backup location as path that needs hiding and wraps the first layer in itself.
+- The fourth layer is the BackupFs layer which takes the third layer as underlying filesystem to operate on (backup location is not accessible nor viewable) and the second PrefixFs layer to backup your files to.
+
+At the end you will create something along the lines of:
+```go
+package main
+
+import (
+	"github.com/jxsl13/backupfs"
+	"github.com/spf13/afero"
+)
+
+func main() {
+
+	var (
+		// first layer
+		base       = afero.NewMemMapFs()
+		backupPath = "/var/opt/app/backups"
+
+		// second layer
+		backup = backupfs.NewPrefixFs(backupPath, base)
+
+		// third layer
+		masked = backupfs.NewHiddenFs(backupPath, base)
+
+		// fourth layer
+		backupFs = backupfs.NewBackupFs(masked, backup)
+	)
+	// you may use backupFs at this point like the os package
+	// except for the backupFs.Rollback() machanism which
+	// allows you to rollback filesystem modifications.
+}
+
+```
 
 ## Example
 

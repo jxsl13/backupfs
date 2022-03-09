@@ -12,8 +12,11 @@ coverage:
 fuzz_prefixfs:
 	gotip clean -testcache && gotip test -fuzz=FuzzPrefixFs -race -fuzztime=300s
 
-fuzz_hiddenfs:
+fuzz_hiddenfs_create:
 	gotip clean -testcache && gotip test -fuzz=FuzzHiddenFsCreate -race -fuzztime=300s
+
+fuzz_hiddenfs_remove_all:
+	gotip clean -testcache && gotip test -fuzz=FuzzHiddenFsRemoveAll -race -fuzztime=300s
 
 fmt:
 	go fmt ./...
