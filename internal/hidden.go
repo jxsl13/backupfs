@@ -8,6 +8,40 @@ import (
 	"github.com/spf13/afero"
 )
 
+func IsParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
+	if len(hiddenPaths) == 0 {
+		return false, nil
+	}
+
+	// file normalization allows to use a single filepath separator
+	name = filepath.Clean(ForceToSlash(name))
+
+	for _, hiddenDir := range hiddenPaths {
+		isParentOfHiddenDir, err := DirContains(name, hiddenDir)
+		if err != nil {
+			return false, err
+		}
+		if isParentOfHiddenDir {
+			return true, nil
+		}
+
+	}
+	return false, nil
+}
+
+func DirContains(parent, subdir string) (bool, error) {
+	relPath, err := filepath.Rel(parent, subdir)
+	if err != nil {
+		return false, err
+	}
+	relPath = ForceToSlash(relPath)
+
+	isSameDir := relPath == "."
+	outsideOfparentDir := strings.HasPrefix(relPath, "../") || relPath == ".."
+
+	return !isSameDir && !outsideOfparentDir, nil
+}
+
 func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
 	// file normalization allows to use a single filepath separator
 
@@ -45,10 +79,9 @@ func IsHidden(name string, hiddenPaths []string) (bool, error) {
 	if len(hiddenPaths) == 0 {
 		return false, nil
 	}
-	// reference: https://stackoverflow.com/questions/28024731/check-if-given-path-is-a-subdirectory-of-another-in-golang?rq=1
 
 	// file normalization allows to use a single filepath separator
-	name = filepath.Clean(filepath.FromSlash(name))
+	name = filepath.Clean(ForceToSlash(name))
 
 	for _, hiddenDir := range hiddenPaths {
 		_, hidden, err := isInHiddenPath(name, hiddenDir)
@@ -69,7 +102,7 @@ func AllFiles(fs afero.Fs, dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		files = append(files, filepath.Join(path, info.Name()))
+		files = append(files, path)
 		return nil
 	})
 	if err != nil {
