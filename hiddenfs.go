@@ -333,8 +333,19 @@ func (s *HiddenFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 
 //SymlinkIfPossible changes the access and modification times of the named file
 func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
+
+	var (
+		hidden bool
+		err    error
+	)
+
 	// not allowed to symlink into hidden directory
-	hidden, err := s.isHidden(oldname)
+	if !filepath.IsAbs(oldname) {
+		hidden, err = s.isHidden(filepath.Join(filepath.Dir(newname), oldname))
+	} else {
+		hidden, err = s.isHidden(oldname)
+	}
+
 	if err != nil {
 		return &os.PathError{Op: "symlink", Path: oldname, Err: wrapErrHiddenCheckFailed(err)}
 	}
