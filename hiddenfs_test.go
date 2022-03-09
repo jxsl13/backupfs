@@ -53,7 +53,7 @@ func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFi
 func TestHiddenFsCreate(t *testing.T) {
 
 	require := require.New(t)
-	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupTempDirHiddenFsTest(t)
+	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
 	_, err := fs.Create(hiddenDir)
@@ -74,7 +74,7 @@ func TestHiddenFsCreate(t *testing.T) {
 func TestHiddenFsMkdir(t *testing.T) {
 
 	require := require.New(t)
-	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupTempDirHiddenFsTest(t)
+	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
 	err := fs.Mkdir(filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
@@ -98,7 +98,7 @@ func TestHiddenFsMkdir(t *testing.T) {
 func TestHiddenFsMkdirAll(t *testing.T) {
 
 	require := require.New(t)
-	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupTempDirHiddenFsTest(t)
+	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
 	err := fs.MkdirAll(filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
@@ -120,7 +120,7 @@ func TestHiddenFsMkdirAll(t *testing.T) {
 func TestHiddenFsOpenFile(t *testing.T) {
 
 	require := require.New(t)
-	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupTempDirHiddenFsTest(t)
+	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
 	err := fs.MkdirAll(filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
