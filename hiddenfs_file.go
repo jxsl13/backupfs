@@ -12,7 +12,10 @@ import (
 var _ afero.File = (*HiddenFsFile)(nil)
 
 func newHiddenFsFile(f afero.File, hiddenPaths []string) *HiddenFsFile {
-	return &HiddenFsFile{}
+	return &HiddenFsFile{
+		f:           f,
+		hiddenPaths: hiddenPaths,
+	}
 }
 
 type HiddenFsFile struct {
@@ -24,10 +27,15 @@ func (hf *HiddenFsFile) Name() string {
 	return hf.f.Name()
 }
 func (hf *HiddenFsFile) Readdir(count int) ([]os.FileInfo, error) {
-	availableFiles := make([]os.FileInfo, 0, count)
+	var availableFiles []os.FileInfo
+	if count > 0 {
+		availableFiles = make([]os.FileInfo, 0, count)
+	} else {
+		availableFiles = make([]os.FileInfo, 0)
+	}
 
 	// extra case where no io.EOF error is returned
-	if count < 0 {
+	if count <= 0 {
 		infos, err := hf.f.Readdir(count)
 		if err != nil {
 			return nil, err
@@ -71,10 +79,15 @@ func (hf *HiddenFsFile) Readdir(count int) ([]os.FileInfo, error) {
 	return availableFiles, nil
 }
 func (hf *HiddenFsFile) Readdirnames(count int) ([]string, error) {
-	availableFiles := make([]string, 0, count)
+	var availableFiles []string
+	if count > 0 {
+		availableFiles = make([]string, 0, count)
+	} else {
+		availableFiles = make([]string, 0)
+	}
 
 	// extra case where no io.EOF error is returned
-	if count < 0 {
+	if count <= 0 {
 		names, err := hf.f.Readdirnames(count)
 		if err != nil {
 			return nil, err
