@@ -16,6 +16,8 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 		return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
 	}
 
+	relPath = ForceToSlash(relPath)
+
 	// no ../ prefix
 	// -> does not lie outside of hidden dir
 	outsideOfHiddenDir := strings.HasPrefix(relPath, "../")
