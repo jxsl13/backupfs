@@ -15,8 +15,10 @@ func NewTestTempdirHiddenFs(hiddenPaths ...string) (base afero.Fs, hfs *HiddenFs
 	return base, NewHiddenFs(base, hiddenPaths...)
 }
 
+// creates a new memmap for every test
+// contrary to the other function that only creates a single memmap
 func NewTestMemMapHiddenFs(hiddenPaths ...string) (base afero.Fs, hfs *HiddenFs) {
-	base = NewTestMemMapFs()
+	base = afero.NewMemMapFs()
 	return base, NewHiddenFs(base, hiddenPaths...)
 }
 
@@ -50,42 +52,12 @@ func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFi
 	return
 }
 
-func TestHiddenFsFilepathRel(t *testing.T) {
+func TestCountFiles(t *testing.T) {
 
-	require := require.New(t)
-	hiddenDirParent, hiddenDir, hiddenFile, _, fs := SetupMemMapHiddenFsTest(t)
+	hiddenDirParent, hiddenDir, _, base, fs := SetupMemMapHiddenFsTest(t)
 
-	b, err := fs.isHidden(hiddenDirParent)
-	require.NoError(err)
-	require.Falsef(b, "should not be hidden: %s", hiddenDirParent)
-
-	b, err = fs.isHidden(hiddenDir)
-	require.NoError(err)
-	require.Truef(b, "should be hidden: %s", hiddenDir)
-
-	absHiddenFile := filepath.Join(hiddenDir, hiddenFile)
-	b, err = fs.isHidden(absHiddenFile)
-	require.NoError(err)
-	require.Truef(b, "should be hidden: %s", absHiddenFile)
-}
-
-func TestHiddenFsIsHidden(t *testing.T) {
-
-	require := require.New(t)
-	hiddenDirParent, hiddenDir, hiddenFile, _, fs := SetupMemMapHiddenFsTest(t)
-
-	b, err := fs.isHidden(hiddenDirParent)
-	require.NoError(err)
-	require.Falsef(b, "should not be hidden: %s", hiddenDirParent)
-
-	b, err = fs.isHidden(hiddenDir)
-	require.NoError(err)
-	require.Truef(b, "should be hidden: %s", hiddenDir)
-
-	absHiddenFile := filepath.Join(hiddenDir, hiddenFile)
-	b, err = fs.isHidden(absHiddenFile)
-	require.NoError(err)
-	require.Truef(b, "should be hidden: %s", absHiddenFile)
+	internal.CountFiles(t, base, hiddenDir, 2)
+	internal.CountFiles(t, fs, hiddenDirParent, 1)
 }
 
 func TestHiddenFsCreate(t *testing.T) {
@@ -107,6 +79,7 @@ func TestHiddenFsCreate(t *testing.T) {
 
 	// at the end the hidden directory should containthe same number of files as before
 	internal.CountFiles(t, base, hiddenDir, 2)
+	internal.CountFiles(t, fs, hiddenDirParent, 2)
 }
 
 func TestHiddenFsMkdir(t *testing.T) {
@@ -115,10 +88,7 @@ func TestHiddenFsMkdir(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	err := fs.Mkdir(filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
-	require.NoError(err)
-
-	err = fs.Mkdir(hiddenDir, 0775)
+	err := fs.Mkdir(hiddenDir, 0775)
 	require.ErrorIs(err, os.ErrPermission)
 
 	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile), 0775)
@@ -131,6 +101,9 @@ func TestHiddenFsMkdir(t *testing.T) {
 
 	// at the end the hidden directory should containthe same number of files as before
 	internal.CountFiles(t, base, hiddenDir, 2)
+
+	// created another directory next to hidenDir
+	internal.CountFiles(t, fs, hiddenDirParent, 2)
 }
 
 func TestHiddenFsMkdirAll(t *testing.T) {
@@ -139,10 +112,9 @@ func TestHiddenFsMkdirAll(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	err := fs.MkdirAll(filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
-	require.NoError(err)
+	internal.MkdirAll(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
 
-	err = fs.MkdirAll(hiddenDir, 0775)
+	err := fs.MkdirAll(hiddenDir, 0775)
 	require.ErrorIs(err, os.ErrPermission)
 
 	err = fs.MkdirAll(filepath.Join(hiddenDir, hiddenFile), 0775)
@@ -153,6 +125,7 @@ func TestHiddenFsMkdirAll(t *testing.T) {
 
 	// at the end the hidden directory should containthe same number of files as before
 	internal.CountFiles(t, base, hiddenDir, 2)
+	internal.CountFiles(t, fs, hiddenDirParent, 6)
 }
 
 func TestHiddenFsOpenFile(t *testing.T) {
@@ -161,18 +134,54 @@ func TestHiddenFsOpenFile(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	err := fs.MkdirAll(filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
-	require.NoError(err)
+	internal.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
+	internal.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
+	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0775)
 
-	err = fs.MkdirAll(hiddenDir, 0775)
+	_, err := fs.OpenFile(hiddenDir, os.O_RDONLY, 0755)
+	require.ErrorIs(err, os.ErrNotExist)
+
+	_, err = fs.OpenFile(filepath.Join(hiddenDir, hiddenFile), os.O_RDONLY, 0755)
+	require.ErrorIs(err, os.ErrNotExist)
+
+	_, err = fs.Create(filepath.Join(hiddenDir, hiddenFile))
 	require.ErrorIs(err, os.ErrPermission)
-
-	err = fs.MkdirAll(filepath.Join(hiddenDir, hiddenFile), 0775)
-	require.ErrorIs(err, os.ErrPermission)
-
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), 0775)
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), 0775)
 
 	// at the end the hidden directory should containthe same number of files as before
 	internal.CountFiles(t, base, hiddenDir, 2)
+	internal.CountFiles(t, fs, hiddenDirParent, 6)
+}
+
+func TestHiddenFsRemove(t *testing.T) {
+
+	require := require.New(t)
+	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
+
+	// try doing stuff in the hidden directory
+	err := fs.Remove(hiddenDir)
+	require.ErrorIs(err, os.ErrNotExist)
+
+	err = fs.Remove(filepath.Join(hiddenDir, hiddenFile))
+	require.ErrorIs(err, os.ErrNotExist)
+
+	// at the end the hidden directory should containthe same number of files as before
+	internal.CountFiles(t, base, hiddenDir, 2)
+	internal.CountFiles(t, fs, hiddenDirParent, 1)
+}
+
+func TestHiddenFsRemoveAll(t *testing.T) {
+	require := require.New(t)
+
+	hiddenDirParent, hiddenDir, _, base, fs := SetupMemMapHiddenFsTest(t)
+
+	internal.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
+	internal.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
+	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0775)
+
+	err := fs.RemoveAll(hiddenDirParent)
+	require.NoError(err)
+
+	// at the end the hidden directory should containthe same number of files as before
+	internal.CountFiles(t, base, hiddenDir, 2)
+	internal.CountFiles(t, fs, hiddenDirParent, 1)
 }
