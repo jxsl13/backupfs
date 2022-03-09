@@ -50,6 +50,25 @@ func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFi
 	return
 }
 
+func TestHiddenFsFilepathRel(t *testing.T) {
+
+	require := require.New(t)
+	hiddenDirParent, hiddenDir, hiddenFile, _, fs := SetupMemMapHiddenFsTest(t)
+
+	b, err := fs.isHidden(hiddenDirParent)
+	require.NoError(err)
+	require.Falsef(b, "should not be hidden: %s", hiddenDirParent)
+
+	b, err = fs.isHidden(hiddenDir)
+	require.NoError(err)
+	require.Truef(b, "should be hidden: %s", hiddenDir)
+
+	absHiddenFile := filepath.Join(hiddenDir, hiddenFile)
+	b, err = fs.isHidden(absHiddenFile)
+	require.NoError(err)
+	require.Truef(b, "should be hidden: %s", absHiddenFile)
+}
+
 func TestHiddenFsIsHidden(t *testing.T) {
 
 	require := require.New(t)
