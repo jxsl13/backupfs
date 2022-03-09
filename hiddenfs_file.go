@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
@@ -11,8 +12,9 @@ import (
 
 var _ afero.File = (*HiddenFsFile)(nil)
 
-func newHiddenFsFile(f afero.File, hiddenPaths []string) *HiddenFsFile {
+func newHiddenFsFile(f afero.File, filePath string, hiddenPaths []string) *HiddenFsFile {
 	return &HiddenFsFile{
+		filePath:    filePath,
 		f:           f,
 		hiddenPaths: hiddenPaths,
 	}
@@ -20,6 +22,7 @@ func newHiddenFsFile(f afero.File, hiddenPaths []string) *HiddenFsFile {
 
 type HiddenFsFile struct {
 	f           afero.File
+	filePath    string
 	hiddenPaths []string
 }
 
@@ -62,7 +65,7 @@ func (hf *HiddenFsFile) Readdir(count int) ([]os.FileInfo, error) {
 		}
 
 		for _, info := range infos {
-			hidden, err := internal.IsHidden(info.Name(), hf.hiddenPaths)
+			hidden, err := internal.IsHidden(filepath.Join(hf.filePath, info.Name()), hf.hiddenPaths)
 			if err != nil {
 				return nil, err
 			}
@@ -94,7 +97,7 @@ func (hf *HiddenFsFile) Readdirnames(count int) ([]string, error) {
 		}
 
 		for _, name := range names {
-			hidden, err := internal.IsHidden(name, hf.hiddenPaths)
+			hidden, err := internal.IsHidden(filepath.Join(hf.filePath, name), hf.hiddenPaths)
 			if err != nil {
 				return nil, err
 			}
