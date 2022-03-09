@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/jxsl13/backupfs/internal"
@@ -20,6 +21,9 @@ var (
 	ErrHiddenPermission      = fmt.Errorf("hidden: %w", os.ErrPermission)
 	wrapErrHiddenCheckFailed = func(err error) error {
 		return fmt.Errorf("hidden check failed: %w", err)
+	}
+	wrapErrParentOfHiddenCheckFailed = func(err error) error {
+		return fmt.Errorf("parent of hidden check failed: %w", err)
 	}
 )
 
@@ -58,6 +62,10 @@ func (fs *HiddenFs) isHidden(name string) (bool, error) {
 	return internal.IsHidden(name, fs.hiddenPaths)
 }
 
+func (fs *HiddenFs) isParentOfHidden(name string) (bool, error) {
+	return internal.IsParentOfHiddenDir(name, fs.hiddenPaths)
+}
+
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
 func (s *HiddenFs) Create(name string) (File, error) {
@@ -68,7 +76,11 @@ func (s *HiddenFs) Create(name string) (File, error) {
 	if hidden {
 		return nil, &os.PathError{Op: "create", Path: name, Err: ErrHiddenPermission}
 	}
-	return s.base.Create(name)
+	f, err := s.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		return nil, &os.PathError{Op: "create", Path: name, Err: err}
+	}
+	return f, nil
 }
 
 // Mkdir creates a directory in the filesystem, return an error if any
@@ -111,14 +123,19 @@ func (s *HiddenFs) OpenFile(name string, flag int, perm os.FileMode) (File, erro
 		return nil, &os.PathError{Op: "open", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
+		if flag&os.O_CREATE != 0 {
+			// requesting creation
+			return nil, &os.PathError{Op: "open", Path: name, Err: ErrHiddenPermission}
+		}
+		// requesting access
 		return nil, &os.PathError{Op: "open", Path: name, Err: ErrHiddenNotExist}
 	}
-	f, err := s.base.Open(name)
+	f, err := s.base.OpenFile(name, flag, perm)
 	if err != nil || f == nil {
 		return nil, err
 	}
 
-	return newHiddenFsFile(f, s.hiddenPaths), nil
+	return newHiddenFsFile(f, name, s.hiddenPaths), nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
@@ -160,6 +177,9 @@ func (s *HiddenFs) RemoveAll(name string) error {
 		return nil
 	}
 
+	// will contain only non-hidden directories
+	dirList := make([]string, 0, 2)
+
 	// directory -> walk the dir tree
 	err = afero.Walk(s.base, name, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -170,17 +190,42 @@ func (s *HiddenFs) RemoveAll(name string) error {
 		if err != nil {
 			return wrapErrHiddenCheckFailed(err)
 		}
+		// skip hidden files
 		if hidden {
 			// we do not touch hidden
 			return nil
 		}
 
+		if info.IsDir() {
+			// dirs will be handled after all of the other files
+			dirList = append(dirList, path)
+			return nil
+		}
+
+		// file or symlink or whatever else
 		return s.Remove(path)
 	})
-
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: err}
 	}
+
+	// sort dirs from most nested to least nested
+	// th this point all of th enon-hidden directories MUST not contain any files
+	sort.Sort(internal.ByMostFilePathSeparators(dirList))
+	for _, dir := range dirList {
+		containsHidden, err := s.isParentOfHidden(dir)
+		if err != nil {
+			return &os.PathError{Op: "remove_all", Path: name, Err: wrapErrParentOfHiddenCheckFailed(err)}
+		}
+
+		if !containsHidden {
+			err = s.base.Remove(dir)
+			if err != nil {
+				return &os.PathError{Op: "remove_all", Path: name, Err: err}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -297,6 +342,7 @@ func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
 		return &os.PathError{Op: "symlink", Path: oldname, Err: ErrHiddenPermission}
 	}
 
+	// no allowed to create symlink in hidden directory
 	hidden, err = s.isHidden(newname)
 	if err != nil {
 		return &os.PathError{Op: "symlink", Path: newname, Err: wrapErrHiddenCheckFailed(err)}
@@ -320,6 +366,7 @@ func (s *HiddenFs) ReadlinkIfPossible(name string) (string, error) {
 	if err != nil {
 		return "", &os.PathError{Op: "readlink", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
+	// not allowed to read link in hidden directory
 	if hidden {
 		return "", &os.PathError{Op: "readlink", Path: name, Err: ErrHiddenNotExist}
 	}
