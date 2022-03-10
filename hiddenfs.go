@@ -3,6 +3,7 @@ package backupfs
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"time"
@@ -333,6 +334,8 @@ func (s *HiddenFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 
 //SymlinkIfPossible changes the access and modification times of the named file
 func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
+	oldname = filepath.FromSlash(oldname)
+	newname = filepath.FromSlash(newname)
 
 	var (
 		hidden bool
@@ -340,10 +343,12 @@ func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
 	)
 
 	// not allowed to symlink into hidden directory
-	if !filepath.IsAbs(oldname) {
-		hidden, err = s.isHidden(filepath.Join(filepath.Dir(newname), oldname))
-	} else {
+
+	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(filepath.FromSlash(oldname)) {
 		hidden, err = s.isHidden(oldname)
+	} else {
+		startingDir := filepath.Dir(newname)
+		hidden, err = s.isHidden(filepath.Join(startingDir, oldname))
 	}
 
 	if err != nil {

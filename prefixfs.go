@@ -2,6 +2,7 @@ package backupfs
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -227,7 +228,7 @@ func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
 		err     error
 		oldPath string
 	)
-	if filepath.IsAbs(oldname) {
+	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(filepath.FromSlash(oldname)) {
 		// absolute path symlink
 		oldPath, err = s.prefixPath(oldname)
 	} else {

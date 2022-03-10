@@ -160,3 +160,5 @@ func main() {
 ## TODO
 
 - Explicit backup method contrary to the implicit backing up.
+- When Go 1.18 is run all of the fuzzing tests on Windows
+- Add symlink fuzz tests on os filesystem that deletes the symlink after each test.
