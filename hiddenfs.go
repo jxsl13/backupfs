@@ -32,7 +32,7 @@ func NewHiddenFs(base afero.Fs, hiddenPaths ...string) *HiddenFs {
 	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 
 	for _, p := range hiddenPaths {
-		normalizedHiddenPaths = append(normalizedHiddenPaths, filepath.Clean(internal.ForceToSlash(p)))
+		normalizedHiddenPaths = append(normalizedHiddenPaths, filepath.Clean(filepath.FromSlash(p)))
 	}
 
 	return &HiddenFs{

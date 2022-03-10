@@ -14,7 +14,7 @@ func TestIsHidden(t *testing.T) {
 	require.NoError(err)
 	require.Falsef(hidden, "relpath=%s", rel)
 
-	rel, hidden, err = IsInHiddenPath("\\var\\opt\\test.txt", hiddenDir)
+	rel, hidden, err = IsInHiddenPath("/var/opt/test.txt", hiddenDir)
 	require.NoError(err)
 	require.Falsef(hidden, "relpath=%s", rel)
 
@@ -26,11 +26,11 @@ func TestIsHidden(t *testing.T) {
 	require.NoError(err)
 	require.Truef(hidden, "relpath=%s", rel)
 
-	rel, hidden, err = IsInHiddenPath("\\var\\opt\\backups\\", hiddenDir)
+	rel, hidden, err = IsInHiddenPath("/var/opt/backups/", hiddenDir)
 	require.NoError(err)
 	require.Truef(hidden, "relpath=%s", rel)
 
-	rel, hidden, err = IsInHiddenPath("\\var\\opt\\backups", hiddenDir)
+	rel, hidden, err = IsInHiddenPath("/var/opt/backups", hiddenDir)
 	require.NoError(err)
 	require.Truef(hidden, "relpath=%s", rel)
 

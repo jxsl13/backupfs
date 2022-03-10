@@ -14,7 +14,7 @@ func IsParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 	}
 
 	// file normalization allows to use a single filepath separator
-	name = filepath.Clean(ForceToSlash(name))
+	name = filepath.Clean(filepath.FromSlash(name))
 
 	for _, hiddenDir := range hiddenPaths {
 		isParentOfHiddenDir, err := DirContains(name, hiddenDir)
@@ -29,15 +29,17 @@ func IsParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 	return false, nil
 }
 
+const relParent = ".." + string(os.PathSeparator)
+
 func DirContains(parent, subdir string) (bool, error) {
 	relPath, err := filepath.Rel(parent, subdir)
 	if err != nil {
 		return false, err
 	}
-	relPath = ForceToSlash(relPath)
+	relPath = filepath.FromSlash(relPath)
 
 	isSameDir := relPath == "."
-	outsideOfparentDir := strings.HasPrefix(relPath, "../") || relPath == ".."
+	outsideOfparentDir := strings.HasPrefix(relPath, relParent) || relPath == ".."
 
 	return !isSameDir && !outsideOfparentDir, nil
 }
@@ -50,11 +52,11 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 		return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
 	}
 
-	relPath = ForceToSlash(relPath)
+	relPath = filepath.FromSlash(relPath)
 
 	// no ../ prefix
 	// -> does not lie outside of hidden dir
-	outsideOfHiddenDir := strings.HasPrefix(relPath, "../")
+	outsideOfHiddenDir := strings.HasPrefix(relPath, relParent)
 	isParentDir := relPath == ".."
 	isHiddenDir := relPath == "."
 
@@ -65,13 +67,9 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 	return relPath, true, nil
 }
 
-func ForceToSlash(path string) string {
-	return strings.ReplaceAll(path, "\\", "/")
-}
-
 func IsInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
 	// file normalization allows to use a single filepath separator
-	name = filepath.Clean(ForceToSlash(name))
+	name = filepath.Clean(filepath.FromSlash(name))
 	return isInHiddenPath(name, hiddenDir)
 }
 
@@ -81,7 +79,7 @@ func IsHidden(name string, hiddenPaths []string) (bool, error) {
 	}
 
 	// file normalization allows to use a single filepath separator
-	name = filepath.Clean(ForceToSlash(name))
+	name = filepath.Clean(filepath.FromSlash(name))
 
 	for _, hiddenDir := range hiddenPaths {
 		_, hidden, err := isInHiddenPath(name, hiddenDir)
