@@ -347,19 +347,20 @@ func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
 	}
 
 	if err != nil {
-		return &os.PathError{Op: "symlink", Path: oldname, Err: wrapErrHiddenCheckFailed(err)}
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "symlink", Path: oldname, Err: ErrHiddenPermission}
+
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: ErrHiddenPermission}
 	}
 
 	// no allowed to create symlink in hidden directory
 	hidden, err = s.isHidden(newname)
 	if err != nil {
-		return &os.PathError{Op: "symlink", Path: newname, Err: wrapErrHiddenCheckFailed(err)}
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return &os.PathError{Op: "symlink", Path: newname, Err: ErrHiddenPermission}
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: ErrHiddenPermission}
 	}
 
 	if linker, ok := s.base.(afero.Linker); ok {
