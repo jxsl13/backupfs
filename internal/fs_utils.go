@@ -61,16 +61,33 @@ func IterateDirTree(name string, visitor func(string) error) error {
 	return nil
 }
 
-// IgnorableError is solely use din Chown
-func IgnorableError(err error) error {
+// IgnorableChownError is solely used in Chown
+func IgnorableChownError(err error) error {
 	// first check os-specific ignorable errors, like on windoes not implemented
-	err = ignorableError(err)
+	err = ignorableChownError(err)
 	if err == nil {
 		return nil
 	}
 
 	// check is permission for chown is denied
 	// if no permission for chown, we don't chown
+	switch {
+	case errors.Is(err, os.ErrPermission):
+		return nil
+	default:
+		return err
+	}
+}
+
+// IgnorableChtimesError is solely used for Chtimes
+func IgnorableChtimesError(err error) error {
+	err = ignorableChtimesError(err)
+	if err == nil {
+		return nil
+	}
+
+	// check is permission for chown is denied
+	// if no permission for chown, we don't chtimes
 	switch {
 	case errors.Is(err, os.ErrPermission):
 		return nil
@@ -109,16 +126,15 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 	targetModTime := info.ModTime()
 	currentModTime := newDirInfo.ModTime()
 	if !currentModTime.Equal(targetModTime) {
-		err = fs.Chtimes(name, targetModTime, targetModTime)
+		err = IgnorableChtimesError(fs.Chtimes(name, targetModTime, targetModTime))
 		if err != nil {
-			// TODO: do we want to fail here?
 			return err
 		}
 	}
 
 	// https://pkg.go.dev/os#Chown
 	// Windows & Plan9 not supported
-	err = IgnorableError(Chown(info, name, fs))
+	err = IgnorableChownError(Chown(info, name, fs))
 	if err != nil {
 		return err
 	}
@@ -166,7 +182,7 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 	currentModTime := newFileInfo.ModTime()
 
 	if !currentModTime.Equal(targetModTime) {
-		err = fs.Chtimes(name, targetModTime, targetModTime)
+		err = IgnorableChtimesError(fs.Chtimes(name, targetModTime, targetModTime))
 		if err != nil {
 			return errWrapCopyFileFailed(err)
 		}
@@ -175,7 +191,7 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 	// might cause a windows error that this function is not implemented by the OS
 	// in a unix fassion
 	// permission and not implemented errors are ignored
-	err = IgnorableError(Chown(info, name, fs))
+	err = IgnorableChownError(Chown(info, name, fs))
 	if err != nil {
 		return errWrapCopyFileFailed(err)
 	}
@@ -215,7 +231,7 @@ func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBase
 		return err
 	}
 
-	return IgnorableError(backupFs.LchownIfPossible(name, Uid(info), Gid(info)))
+	return IgnorableChownError(backupFs.LchownIfPossible(name, Uid(info), Gid(info)))
 }
 
 // Chown is an operating system dependent implementation.

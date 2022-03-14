@@ -18,11 +18,15 @@ func Gid(from os.FileInfo) int {
 }
 
 // ignorableError errors that are due to such functions not being implemented on windows
-func ignorableError(err error) error {
+func ignorableChownError(err error) error {
 	switch {
 	case errors.Is(err, syscall.EWINDOWS):
 		return nil
 	default:
 		return err
 	}
+}
+
+func ignorableChtimesError(err error) error {
+	return err
 }

@@ -27,6 +27,10 @@ func Gid(from os.FileInfo) int {
 	return -1
 }
 
-func ignorableError(err error) error {
+func ignorableChownError(err error) error {
+	return err
+}
+
+func ignorableChtimesError(err error) error {
 	return err
 }
