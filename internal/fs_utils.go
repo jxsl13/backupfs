@@ -342,7 +342,7 @@ func LExists(fs afero.Fs, path string) (bool, error) {
 	}
 
 	_, _, err := lstater.LstatIfPossible(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
 

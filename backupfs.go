@@ -456,6 +456,114 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 	return info, true, nil
 }
 
+func (fs *BackupFs) ForceBackup(name string) (err error) {
+	name, err = fs.realPath(name)
+	if err != nil {
+		return &os.PathError{Op: "force_backup", Err: fmt.Errorf("failed to clean path: %w", err), Path: name}
+	}
+
+	err = fs.tryRemoveBackup(name)
+	if err != nil {
+		return &os.PathError{Op: "force_backup", Err: fmt.Errorf("failed to remove backup: %w", err), Path: name}
+	}
+
+	err = fs.tryBackup(name)
+	if err != nil {
+		return &os.PathError{Op: "force_backup", Err: fmt.Errorf("backup failed: %w", err), Path: name}
+	}
+
+	return nil
+}
+
+func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
+	_, needsBackup, err := fs.backupRequired(name)
+	if err != nil {
+		return err
+	}
+	// there is no backup
+	if needsBackup {
+		return nil
+	}
+
+	fi, _, err := internal.LstatIfPossible(fs.backup, name)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	// file not found
+	if fi == nil {
+		// nothing to remove, except internal state if it exists
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+
+		delete(fs.baseInfos, name)
+		return nil
+	}
+
+	if !fi.IsDir() {
+		defer func() {
+			if err == nil {
+				// only delete from internal state
+				// when file has been deleted
+				// this allows to retry the deletion attempt
+				fs.mu.Lock()
+				delete(fs.baseInfos, name)
+				fs.mu.Unlock()
+			}
+		}()
+		// remove file/symlink
+		return fs.backup.Remove(name)
+	}
+
+	dirs := make([]string, 0)
+
+	err = afero.Walk(fs.backup, name, func(path string, info os.FileInfo, err error) (e error) {
+		// and then check for error
+		if err != nil {
+			return err
+		}
+
+		defer func() {
+			if e == nil {
+				// delete dirs and files from internal map
+				// but only after re have removed the file successfully
+				fs.mu.Lock()
+				delete(fs.baseInfos, path)
+				fs.mu.Unlock()
+			}
+		}()
+
+		if info.IsDir() {
+			// keep track of dirs
+			dirs = append(dirs, path)
+			return nil
+		}
+
+		// delete files
+		return fs.backup.Remove(path)
+	})
+	if err != nil {
+		return err
+	}
+
+	sort.Sort(internal.ByMostFilePathSeparators(dirs))
+
+	for _, dir := range dirs {
+		err = fs.backup.RemoveAll(dir)
+		if err != nil {
+			return err
+		}
+
+		// delete directory from internal
+		// state only after it has been actually deleted
+		fs.mu.Lock()
+		delete(fs.baseInfos, dir)
+		fs.mu.Unlock()
+	}
+
+	return nil
+}
+
 func (fs *BackupFs) tryBackup(name string) (err error) {
 
 	info, needsBackup, err := fs.backupRequired(name)

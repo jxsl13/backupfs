@@ -387,8 +387,107 @@ func TestBackupFsRollback(t *testing.T) {
 	internal.MustNotExist(t, backupFs, "/test/001/subdir_new")
 
 	// but old directories that did exist before should still exist
-	internal.MustExist(t, base, "/test/001")
-	internal.MustExist(t, backupFs, "/test/001")
+	internal.MustExist(t, base, fileDir)
+	internal.MustExist(t, backupFs, fileDir)
+}
+
+func TestBackupFsRollbackWithForcedBackup(t *testing.T) {
+	ResetTestMemMapFs()
+
+	var (
+		require      = require.New(t)
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFs := NewTestBackupFs(basePrefix, backupPrefix)
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot    = "/test"
+		fileDir        = "/test/001"
+		fileDir2       = "/test/0/2"
+		fileContent    = "test_content"
+		fileContentNew = "test_content_new"
+	)
+
+	internal.MkdirAll(t, base, fileDir, 0755)
+	internal.MkdirAll(t, base, fileDir2, 0755)
+
+	internal.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
+	internal.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test03.txt", fileContent)
+	internal.CreateFile(t, base, fileDir2+"/test04.txt", fileContent)
+
+	// delete directory & files that did exist before
+	internal.RemoveAll(t, backupFs, fileDir)
+
+	// force  backup of a deleted directoty
+	//  which existed before
+	err := backupFs.ForceBackup(fileDir)
+	require.NoError(err)
+
+	// removed files must not exist
+	internal.MustNotExist(t, base, fileDir)
+	internal.MustNotExist(t, base, fileDir+"/test01.txt")
+	internal.MustNotExist(t, base, fileDir+"/test02.txt")
+
+	internal.MustNotExist(t, backupFs, fileDir)
+	internal.MustNotExist(t, backupFs, fileDir+"/test01.txt")
+	internal.MustNotExist(t, backupFs, fileDir+"/test02.txt")
+
+	internal.MustExist(t, backup, fileDirRoot)
+	internal.MustNotExist(t, backup, fileDir)
+	internal.MustNotExist(t, backup, fileDir+"/test01.txt")
+	internal.MustNotExist(t, backup, fileDir+"/test02.txt")
+
+	// create files that did not exist before
+	internal.CreateFile(t, backupFs, fileDir2+"/test05_new.txt", fileContentNew)
+	internal.CreateFile(t, backupFs, fileDir2+"/test06_new.txt", fileContentNew)
+
+	internal.MustNotExist(t, backup, fileDir2+"/test05_new.txt")
+	internal.MustNotExist(t, backup, fileDir2+"/test06_new.txt")
+
+	err = backupFs.ForceBackup(fileDir2 + "/test05_new.txt")
+	require.NoError(err)
+
+	internal.FileMustContainText(t, backup, fileDir2+"/test05_new.txt", fileContentNew)
+
+	internal.MkdirAll(t, backupFs, "/test/001/subdir_new", 0755)
+	internal.CreateFile(t, backupFs, "/test/001/subdir_new/test06_new.txt", "fileContentNew")
+
+	internal.MustNotExist(t, backup, "/test/001/subdir_new")
+	internal.MustNotExist(t, backup, "/test/001/subdir_new/test06_new.txt")
+
+	// ROLLBACK
+	err = backupFs.Rollback()
+	require.NoError(err)
+	// ROLLBACK
+
+	internal.MustNotExist(t, backupFs, fileDir)
+	internal.MustNotExist(t, backupFs, fileDir+"/test01.txt")
+	internal.MustNotExist(t, backupFs, fileDir+"/test02.txt")
+
+	internal.MustNotExist(t, base, fileDir)
+	internal.MustNotExist(t, base, fileDir+"/test01.txt")
+	internal.MustNotExist(t, base, fileDir+"/test02.txt")
+
+	internal.MustExist(t, base, fileDir2+"/test05_new.txt")
+	internal.MustExist(t, backupFs, fileDir2+"/test05_new.txt")
+	internal.MustNotExist(t, base, fileDir2+"/test06_new.txt")
+	internal.MustNotExist(t, backupFs, fileDir2+"/test06_new.txt")
+
+	internal.MustNotExist(t, base, "/test/001/subdir_new/test06_new.txt")
+	internal.MustNotExist(t, backupFs, "/test/001/subdir_new/test06_new.txt")
+
+	internal.MustNotExist(t, base, "/test/001/subdir_new")
+	internal.MustNotExist(t, backupFs, "/test/001/subdir_new")
+
+	// we forced the deletion of the fileDir to be backed up
+	// this means the the folder and its contents do not exist anymore
+	internal.MustNotExist(t, base, fileDir)
+	internal.MustNotExist(t, backupFs, fileDir)
 }
 
 func TestBackupFsJSON(t *testing.T) {
