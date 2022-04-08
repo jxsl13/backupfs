@@ -7,6 +7,45 @@ Requires the filesystem modifications to happen via the provided structs of this
 
 And a third filesystem abstraction layer that will prevent you from shooting your own foot in case both your backup location as well as your to be backed up filesystem work on the same underlying filesystem where the backup location might be a subfolder of your to be backed up filesystem.
 
+## Example Use Case
+
+My own use case is the ability to implement the command pattern on top of a filesystem. 
+The pattern consists of a simple interface.
+
+```go
+type Command interface {
+	Execute() error
+	Undo() error
+}
+```
+A multitude of such commands allows to provision software packages (archives) and configuration files to target systems running some kind of agent software.
+Upon detection of invalid configurations or incorrect software, it is possible to rollback the last transaction.
+
+A transaction is also a command containing a list of non-transaction commands embedding and providing a `BackupFs` to its subcommands requiring to execute filesystem operations.
+
+For all commands solely operating on the filesystem the `Undo()` mechanism consists of simply calling `BackupFs.Rollback()`
+
+Further commands might tackle the topics of:
+- un/tar
+- creation of files, directories & symlinks
+- removal of files, directories & symlinks
+- download of files and writing them to the filesystem
+- rotation of persisted credentials that might not work upon testing
+
+If you try to tackle the rollback/undo problem yourself you will see pretty fast that the rollback mechanism is a pretty complex implementation with lots of pitfalls where this approach might help you out.
+
+If you follow the rule that **filesystem modifying commands** are to be strictly separated from 
+- creation, 
+- deletion 
+- or modification of files, directories and symlinks 
+- creation of systemd unit files (writing service configuration)
+
+**side effects causing commands**
+- creation of linux system users and groups
+- start of linux systemd services configured with the above file in the filesystem
+
+then you will have a much easier time!
+
 ## PrefixFs
 
 This package provides two filesystem abstractions which both implement the spf13/afer.Fs interface as well as the optional interfaces.
@@ -159,6 +198,5 @@ func main() {
 
 ## TODO
 
-- Explicit backup method contrary to the implicit backing up.
 - When Go 1.18 is run all of the fuzzing tests on Windows
 - Add symlink fuzz tests on os filesystem that deletes the symlink after each test.
