@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
-	"github.com/spf13/afero/mem"
 )
 
 var (
@@ -233,12 +233,54 @@ func (fs *BackupFs) Rollback() error {
 	return nil
 }
 
+func (fs *BackupFs) Map() map[string]os.FileInfo {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	m := make(map[string]os.FileInfo, len(fs.baseInfos))
+	for path, info := range fs.baseInfos {
+		m[path] = toFInfo(path, info)
+	}
+	return m
+}
+
+func toFInfo(path string, fi os.FileInfo) *fInfo {
+	return &fInfo{
+		FileName:    filepath.ToSlash(path),
+		FileMode:    uint32(fi.Mode()),
+		FileModTime: fi.ModTime().UnixNano(),
+		FileSize:    fi.Size(),
+		FileUid:     internal.Uid(fi),
+		FileGid:     internal.Gid(fi),
+	}
+}
+
 type fInfo struct {
-	Name    string `json:"name"`
-	Mode    uint32 `json:"mode"`
-	ModTime int64  `json:"mod_time"`
-	Uid     int    `json:"uid"`
-	Gid     int    `json:"gid"`
+	FileName    string `json:"name"`
+	FileMode    uint32 `json:"mode"`
+	FileModTime int64  `json:"mod_time"`
+	FileSize    int64  `json:"size"`
+	FileUid     int    `json:"uid"`
+	FileGid     int    `json:"gid"`
+}
+
+func (fi *fInfo) Name() string {
+	return path.Base(fi.FileName)
+}
+func (fi *fInfo) Size() int64 {
+	return fi.FileSize
+}
+func (fi *fInfo) Mode() os.FileMode {
+	return os.FileMode(fi.FileMode)
+}
+func (fi *fInfo) ModTime() time.Time {
+	return time.Unix(fi.FileModTime/1000000000, fi.FileModTime%1000000000)
+}
+func (fi *fInfo) IsDir() bool {
+	return fi.Mode().IsDir()
+}
+func (fi *fInfo) Sys() interface{} {
+	return nil
 }
 
 func (fs *BackupFs) MarshalJSON() ([]byte, error) {
@@ -253,13 +295,7 @@ func (fs *BackupFs) MarshalJSON() ([]byte, error) {
 			continue
 		}
 
-		fiMap[path] = &fInfo{
-			Name:    filepath.ToSlash(path),
-			Mode:    uint32(fi.Mode()),
-			ModTime: fi.ModTime().UnixNano(),
-			Uid:     internal.Uid(fi),
-			Gid:     internal.Gid(fi),
-		}
+		fiMap[path] = toFInfo(path, fi)
 	}
 
 	return json.Marshal(fiMap)
@@ -276,38 +312,11 @@ func (fs *BackupFs) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	result := make(map[string]os.FileInfo, len(fiMap))
-
-	for path, fi := range fiMap {
-		path = filepath.FromSlash(path)
-		if fi == nil {
-			result[path] = nil
-			continue
-		}
-
-		var memFile *mem.FileData
-		mode := os.FileMode(fi.Mode)
-		if mode.IsDir() {
-			memFile = mem.CreateDir(fi.Name)
-		} else {
-			memFile = mem.CreateFile(fi.Name)
-		}
-
-		mem.SetMode(memFile, mode)
-		mem.SetModTime(memFile, time.Unix(fi.ModTime/1000, fi.ModTime%1000))
-
-		if fi.Gid >= 0 {
-			mem.SetGID(memFile, fi.Gid)
-		}
-
-		if fi.Uid >= 0 {
-			mem.SetUID(memFile, fi.Uid)
-		}
-
-		result[path] = mem.GetFileInfo(memFile)
+	fs.baseInfos = make(map[string]os.FileInfo, len(fiMap))
+	for k, v := range fiMap {
+		fs.baseInfos[k] = v
 	}
 
-	fs.baseInfos = result
 	return nil
 }
 
@@ -749,7 +758,6 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 		return &os.PathError{Op: "chown", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	// TODO: do we want to ignore errors from Windows that this function is not supported by the OS?
 	err = fs.base.Chown(name, uid, gid)
 	if err != nil {
 		return &os.PathError{Op: "chown", Path: name, Err: fmt.Errorf("chown failed: %w", err)}

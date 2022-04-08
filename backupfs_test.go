@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jxsl13/backupfs/internal"
 	"github.com/spf13/afero"
@@ -455,10 +456,28 @@ func TestBackupFsJSON(t *testing.T) {
 	data, err := json.Marshal(backupFs)
 	require.NoError(err)
 
-	err = json.Unmarshal(data, &backupFs)
+	var backupFsNew *BackupFs = NewBackupFs(base, backup)
+	err = json.Unmarshal(data, &backupFsNew)
 	require.NoError(err)
 
 	// JSON
+	oldMap := backupFs.baseInfos
+	newMap := backupFsNew.baseInfos
+
+	for path, info := range oldMap {
+		newInfo := newMap[path]
+
+		if info == nil {
+			require.Nil(newInfo)
+			continue
+		}
+
+		require.Equal(info.IsDir(), newInfo.IsDir())
+		require.Equal(info.Name(), newInfo.Name())
+		require.Equal(info.Size(), newInfo.Size())
+		require.Equal(info.ModTime().UnixNano(), newInfo.ModTime().UnixNano())
+		require.Equal(info.Mode(), newInfo.Mode())
+	}
 
 	// ROLLBACK
 	err = backupFs.Rollback()
@@ -466,9 +485,9 @@ func TestBackupFsJSON(t *testing.T) {
 	// ROLLBACK
 
 	// previously deleted files must have been restored
-	internal.MustExist(t, backupFs, fileDir)
-	internal.MustExist(t, backupFs, fileDir+"/test01.txt")
-	internal.MustExist(t, backupFs, fileDir+"/test02.txt")
+	internal.MustExist(t, backupFsNew, fileDir)
+	internal.MustExist(t, backupFsNew, fileDir+"/test01.txt")
+	internal.MustExist(t, backupFsNew, fileDir+"/test02.txt")
 
 	// also restored in the underlying filesystem
 	internal.MustExist(t, base, fileDir)
@@ -477,19 +496,19 @@ func TestBackupFsJSON(t *testing.T) {
 
 	// newly created files must have been deleted upon rollback
 	internal.MustNotExist(t, base, fileDir2+"/test05_new.txt")
-	internal.MustNotExist(t, backupFs, fileDir2+"/test05_new.txt")
+	internal.MustNotExist(t, backupFsNew, fileDir2+"/test05_new.txt")
 
 	// new files should have been deleted
 	internal.MustNotExist(t, base, "/test/001/subdir_new/test06_new.txt")
-	internal.MustNotExist(t, backupFs, "/test/001/subdir_new/test06_new.txt")
+	internal.MustNotExist(t, backupFsNew, "/test/001/subdir_new/test06_new.txt")
 
 	// new directories as well
 	internal.MustNotExist(t, base, "/test/001/subdir_new")
-	internal.MustNotExist(t, backupFs, "/test/001/subdir_new")
+	internal.MustNotExist(t, backupFsNew, "/test/001/subdir_new")
 
 	// but old directories that did exist before should still exist
 	internal.MustExist(t, base, "/test/001")
-	internal.MustExist(t, backupFs, "/test/001")
+	internal.MustExist(t, backupFsNew, "/test/001")
 
 }
 
@@ -637,4 +656,14 @@ func TestBackupFs_Chmod(t *testing.T) {
 	// compare backed up permissions to initial permissions
 	backedUpPerm := fi.Mode()
 	internal.ModeMustBeEqual(t, initialMode, backedUpPerm)
+}
+
+func TestTime(t *testing.T) {
+	require := require.New(t)
+
+	t1 := time.Now()
+	nanoBefore := t1.UnixNano()
+
+	t2 := time.Unix(nanoBefore/1000000000, nanoBefore%1000000000)
+	require.Equal(t1.UnixNano(), t2.UnixNano())
 }
