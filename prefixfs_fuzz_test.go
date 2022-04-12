@@ -6,6 +6,7 @@ package backupfs
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -15,8 +16,8 @@ import (
 
 func FuzzPrefixFs(f *testing.F) {
 
-	const (
-		prefix   = "/some/test/prefix/01/test/02"
+	var (
+		prefix   = filepath.FromSlash("/some/test/prefix/01/test/02")
 		fileName = "prefixfs_test.txt"
 	)
 	for _, seed := range []string{".", "/", "..", "\\", fileName} {
