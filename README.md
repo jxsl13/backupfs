@@ -9,7 +9,7 @@ And a third filesystem abstraction layer that will prevent you from shooting you
 
 ## Example Use Case
 
-My own use case is the ability to implement the command pattern on top of a filesystem. 
+My own use case is the ability to implement the command pattern on top of a filesystem.
 The pattern consists of a simple interface.
 
 ```go
@@ -34,10 +34,10 @@ Further commands might tackle the topics of:
 
 If you try to tackle the rollback/undo problem yourself you will see pretty fast that the rollback mechanism is a pretty complex implementation with lots of pitfalls where this approach might help you out.
 
-If you follow the rule that **filesystem modifying commands** are to be strictly separated from 
-- creation, 
-- deletion 
-- or modification of files, directories and symlinks 
+If you follow the rule that **filesystem modifying commands** are to be strictly separated from
+- creation,
+- deletion
+- or modification of files, directories and symlinks
 - creation of systemd unit files (writing service configuration)
 
 **side effects causing commands**
@@ -198,5 +198,4 @@ func main() {
 
 ## TODO
 
-- When Go 1.18 is run all of the fuzzing tests on Windows
 - Add symlink fuzz tests on os filesystem that deletes the symlink after each test.
