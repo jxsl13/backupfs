@@ -28,14 +28,26 @@ type VolumeFs struct {
 	base   afero.Fs
 }
 
-func (v *VolumeFs) prefixPath(name string) string {
+func (v *VolumeFs) prefixPath(name string) (string, error) {
 	name = filepath.Clean(name)
 
 	if v.volume == "" {
-		return name
+		return name, nil
 	}
 
-	return filepath.Clean(filepath.Join(v.volume, name))
+	pathVolumeName := filepath.VolumeName(name)
+	if pathVolumeName == "" {
+		return filepath.Clean(filepath.Join(v.volume, name)), nil
+	}
+
+	if pathVolumeName == v.volume {
+		return name, nil
+	}
+
+	// filepath contains an invalid volume name which we do not expect
+	// we also do not want to remove the volume and put our expected volume in
+	// front of the path name (for now)
+	return "", os.ErrNotExist
 }
 
 func NewVolumeFs(volume string, fs afero.Fs) *VolumeFs {
@@ -48,7 +60,7 @@ func NewVolumeFs(volume string, fs afero.Fs) *VolumeFs {
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
 func (v *VolumeFs) Create(name string) (File, error) {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
 
 	f, err := v.base.Create(path)
 	if f == nil {
@@ -61,7 +73,10 @@ func (v *VolumeFs) Create(name string) (File, error) {
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
 func (v *VolumeFs) Mkdir(name string, perm os.FileMode) error {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 
 	return v.base.Mkdir(path, perm)
 }
@@ -69,7 +84,10 @@ func (v *VolumeFs) Mkdir(name string, perm os.FileMode) error {
 // MkdirAll creates a directory path and all parents that does not exist
 // yet.
 func (v *VolumeFs) MkdirAll(name string, perm os.FileMode) error {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 
 	return v.base.MkdirAll(path, perm)
 }
@@ -77,7 +95,10 @@ func (v *VolumeFs) MkdirAll(name string, perm os.FileMode) error {
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
 func (v *VolumeFs) Open(name string) (File, error) {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return nil, err
+	}
 
 	f, err := v.base.Open(path)
 	if f == nil {
@@ -89,7 +110,10 @@ func (v *VolumeFs) Open(name string) (File, error) {
 
 // OpenFile opens a file using the given flags and the given mode.
 func (v *VolumeFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return nil, err
+	}
 
 	f, err := v.base.OpenFile(path, flag, perm)
 	if f == nil {
@@ -102,7 +126,10 @@ func (v *VolumeFs) OpenFile(name string, flag int, perm os.FileMode) (File, erro
 // Remove removes a file identified by name, returning an error, if any
 // happens.
 func (v *VolumeFs) Remove(name string) error {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 
 	return v.base.Remove(path)
 }
@@ -110,15 +137,24 @@ func (v *VolumeFs) Remove(name string) error {
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
 func (v *VolumeFs) RemoveAll(name string) error {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 
 	return v.base.RemoveAll(path)
 }
 
 // Rename renames a file.
 func (v *VolumeFs) Rename(oldname, newname string) error {
-	oldpath := v.prefixPath(oldname)
-	newpath := v.prefixPath(newname)
+	oldpath, err := v.prefixPath(oldname)
+	if err != nil {
+		return err
+	}
+	newpath, err := v.prefixPath(newname)
+	if err != nil {
+		return err
+	}
 
 	return v.base.Rename(oldpath, newpath)
 }
@@ -126,7 +162,10 @@ func (v *VolumeFs) Rename(oldname, newname string) error {
 // Stat returns a FileInfo describing the named file, or an error, if any
 // happens.
 func (v *VolumeFs) Stat(name string) (os.FileInfo, error) {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return nil, err
+	}
 
 	fi, err := v.base.Stat(path)
 	if err != nil {
@@ -143,21 +182,30 @@ func (v *VolumeFs) Name() string {
 
 // Chmod changes the mode of the named file to mode.
 func (v *VolumeFs) Chmod(name string, mode os.FileMode) error {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 
 	return v.base.Chmod(path, mode)
 }
 
 // Chown changes the uid and gid of the named file.
 func (v *VolumeFs) Chown(name string, uid, gid int) error {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 
 	return v.base.Chown(path, uid, gid)
 }
 
 //Chtimes changes the access and modification times of the named file
 func (v *VolumeFs) Chtimes(name string, atime, mtime time.Time) error {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 	return v.base.Chtimes(path, atime, mtime)
 }
 
@@ -165,7 +213,10 @@ func (v *VolumeFs) Chtimes(name string, atime, mtime time.Time) error {
 // Else it will call Stat.
 // In addtion to the FileInfo, it will return a boolean telling whether Lstat was called or not.
 func (v *VolumeFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return nil, false, err
+	}
 
 	if l, ok := v.base.(afero.Lstater); ok {
 		// implements interface
@@ -187,17 +238,25 @@ func (v *VolumeFs) SymlinkIfPossible(oldname, newname string) error {
 	// links may be relative paths
 
 	var (
+		err     error
 		oldPath string
 	)
 	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(filepath.FromSlash(oldname)) {
 		// absolute path symlink
-		oldPath = v.prefixPath(oldname)
+		oldPath, err = v.prefixPath(oldname)
 	} else {
 		// relative path symlink
 		oldPath = oldname
 	}
 
-	newPath := v.prefixPath(newname)
+	if err != nil {
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+	}
+
+	newPath, err := v.prefixPath(newname)
+	if err != nil {
+		return err
+	}
 
 	if l, ok := v.base.(afero.Linker); ok {
 		// implements interface
@@ -211,7 +270,10 @@ func (v *VolumeFs) SymlinkIfPossible(oldname, newname string) error {
 }
 
 func (v *VolumeFs) ReadlinkIfPossible(name string) (string, error) {
-	path := v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return "", err
+	}
 
 	if reader, ok := v.base.(afero.LinkReader); ok {
 		linkedPath, err := reader.ReadlinkIfPossible(path)
@@ -225,10 +287,13 @@ func (v *VolumeFs) ReadlinkIfPossible(name string) (string, error) {
 }
 
 func (v *VolumeFs) LchownIfPossible(name string, uid, gid int) error {
-	name = v.prefixPath(name)
+	path, err := v.prefixPath(name)
+	if err != nil {
+		return err
+	}
 
 	if linkOwner, ok := v.base.(LinkOwner); ok {
-		return linkOwner.LchownIfPossible(name, uid, gid)
+		return linkOwner.LchownIfPossible(path, uid, gid)
 	}
 	return &os.PathError{Op: "lchown", Path: name, Err: internal.ErrNoLchown}
 }
