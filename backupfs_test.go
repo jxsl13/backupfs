@@ -60,14 +60,11 @@ func NewTestPrefixFs(prefix string) *PrefixFs {
 func NewTempdirPrefixFs(prefix string) *PrefixFs {
 	osFs := newOsFs()
 
-	pwd, err := os.Getwd()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	binPath := os.Args[0]
 
-	volume := NewVolumeFs(filepath.VolumeName(pwd), osFs)
+	volume := NewVolumeFs(filepath.VolumeName(binPath), osFs)
 
-	prefix, err = afero.TempDir(volume, "", prefix)
+	prefix, err := afero.TempDir(volume, "", prefix)
 	if err != nil {
 		log.Fatalln(err)
 	}
