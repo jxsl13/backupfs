@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -59,12 +60,19 @@ func NewTestPrefixFs(prefix string) *PrefixFs {
 func NewTempdirPrefixFs(prefix string) *PrefixFs {
 	osFs := newOsFs()
 
-	prefix, err := afero.TempDir(osFs, "", prefix)
+	pwd, err := os.Getwd()
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	return NewPrefixFs(prefix, osFs)
+	volume := NewVolumeFs(filepath.VolumeName(pwd), osFs)
+
+	prefix, err = afero.TempDir(volume, "", prefix)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return NewPrefixFs(prefix, volume)
 }
 
 func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup afero.Fs, backupFs *BackupFs) {
