@@ -14,8 +14,15 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - name: Checkout code
       uses: actions/checkout@v3
+    - name: Lint
+      run: golint -set_exit_status=1 ./...
+
+    - name: Vet
+      run: go vet ./...
+
     - name: Code Coverage
-      run: go clean -testcache && go test ./... -timeout 30s -race -covermode=atomic -coverprofile=coverage.txt
+      run: go test ./... -timeout 30s -race -count=1 -covermode=atomic -coverprofile=coverage.txt
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
