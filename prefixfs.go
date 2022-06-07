@@ -275,13 +275,13 @@ func (s *PrefixFs) ReadlinkIfPossible(name string) (string, error) {
 }
 
 func (s *PrefixFs) LchownIfPossible(name string, uid, gid int) error {
-	name, err := s.prefixPath(name)
+	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
 	}
 
 	if linkOwner, ok := s.base.(LinkOwner); ok {
-		return linkOwner.LchownIfPossible(name, uid, gid)
+		return linkOwner.LchownIfPossible(path, uid, gid)
 	}
 	return &os.PathError{Op: "lchown", Path: name, Err: internal.ErrNoLchown}
 }
