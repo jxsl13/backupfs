@@ -48,7 +48,7 @@ then you will have a much easier time!
 
 ## PrefixFs
 
-This package provides two filesystem abstractions which both implement the spf13/afer.Fs interface as well as the optional interfaces.
+This package provides two filesystem abstractions which both implement the spf13/afero.Fs interface as well as the optional interfaces.
 Firstly, a struct called `PrefixFs`. As the name already suggests, PrefixFS forces a filesystem to have a specific prefix.
 Any attempt to escape the prefix path by directory traversal is prevented, forcing the application to stay within the designated prefix directory.
 
