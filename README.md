@@ -34,13 +34,13 @@ Further commands might tackle the topics of:
 
 If you try to tackle the rollback/undo problem yourself you will see pretty fast that the rollback mechanism is a pretty complex implementation with lots of pitfalls where this approach might help you out.
 
-If you follow the rule that **filesystem modifying commands** are to be strictly separated from
+If you follow the rule that **filesystem modifying commands**
 - creation,
 - deletion
 - or modification of files, directories and symlinks
 - creation of systemd unit files (writing service configuration)
 
-**side effects causing commands**
+are to be strictly separated from **side effects causing commands**
 - creation of linux system users and groups
 - start of linux systemd services configured with the above file in the filesystem
 
