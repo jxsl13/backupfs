@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,7 +35,7 @@ func FileMustContainText(t *testing.T, fs afero.Fs, path, content string) {
 	f, err := fs.Open(path)
 	require.NoError(err)
 	defer f.Close()
-	b, err := ioutil.ReadAll(f)
+	b, err := io.ReadAll(f)
 	require.NoError(err)
 
 	require.Equal(string(b), content)
