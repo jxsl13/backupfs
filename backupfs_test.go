@@ -60,16 +60,23 @@ func NewTestPrefixFs(prefix string) *PrefixFs {
 func NewTempdirPrefixFs(prefix string) *PrefixFs {
 	osFs := newOsFs()
 
-	binPath := os.Args[0]
+	tempDir := os.TempDir()
+	err := os.MkdirAll(tempDir, 0700)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	volume := filepath.VolumeName(tempDir)
+	volumeFs := NewVolumeFs(volume, osFs)
+	tempDir = TrimVolume(tempDir)
 
-	volume := NewVolumeFs(filepath.VolumeName(binPath), osFs)
+	// remove volume from temp dir
 
-	prefix, err := afero.TempDir(volume, "", prefix)
+	prefix, err = afero.TempDir(volumeFs, tempDir, prefix)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	return NewPrefixFs(prefix, volume)
+	return NewPrefixFs(prefix, volumeFs)
 }
 
 func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup afero.Fs, backupFs *BackupFs) {

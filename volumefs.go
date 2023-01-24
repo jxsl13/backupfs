@@ -28,6 +28,8 @@ type VolumeFs struct {
 	base   afero.Fs
 }
 
+// the passed file path must not contain any os specific volume prefix.
+// primarily no windows volumes like c:, d:, etc.
 func (v *VolumeFs) prefixPath(name string) (string, error) {
 	name = filepath.Clean(name)
 
@@ -35,19 +37,12 @@ func (v *VolumeFs) prefixPath(name string) (string, error) {
 		return name, nil
 	}
 
-	pathVolumeName := filepath.VolumeName(name)
-	if pathVolumeName == "" {
-		return filepath.Clean(filepath.Join(v.volume, name)), nil
+	volumePrefix := filepath.VolumeName(name)
+	if volumePrefix != "" {
+		return "", os.ErrNotExist
 	}
 
-	if pathVolumeName == v.volume {
-		return name, nil
-	}
-
-	// filepath contains an invalid volume name which we do not expect
-	// we also do not want to remove the volume and put our expected volume in
-	// front of the path name (for now)
-	return "", os.ErrNotExist
+	return filepath.Clean(filepath.Join(v.volume, name)), nil
 }
 
 func NewVolumeFs(volume string, fs afero.Fs) *VolumeFs {
@@ -61,6 +56,9 @@ func NewVolumeFs(volume string, fs afero.Fs) *VolumeFs {
 // error, if any happens.
 func (v *VolumeFs) Create(name string) (File, error) {
 	path, err := v.prefixPath(name)
+	if err != nil {
+		return nil, err
+	}
 
 	f, err := v.base.Create(path)
 	if f == nil {
@@ -200,7 +198,7 @@ func (v *VolumeFs) Chown(name string, uid, gid int) error {
 	return v.base.Chown(path, uid, gid)
 }
 
-//Chtimes changes the access and modification times of the named file
+// Chtimes changes the access and modification times of the named file
 func (v *VolumeFs) Chtimes(name string, atime, mtime time.Time) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
@@ -233,7 +231,7 @@ func (v *VolumeFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 
 }
 
-//SymlinkIfPossible changes the access and modification times of the named file
+// SymlinkIfPossible changes the access and modification times of the named file
 func (v *VolumeFs) SymlinkIfPossible(oldname, newname string) error {
 	// links may be relative paths
 
@@ -296,4 +294,11 @@ func (v *VolumeFs) LchownIfPossible(name string, uid, gid int) error {
 		return linkOwner.LchownIfPossible(path, uid, gid)
 	}
 	return &os.PathError{Op: "lchown", Path: name, Err: internal.ErrNoLchown}
+}
+
+// TrimVolume trims the volume prefix of a given filepath. C:\A\B\C -> \A\B\C
+// highly OS-dependent. On unix systems there is no such thing as a volume path prefix.
+func TrimVolume(filePath string) string {
+	volume := filepath.VolumeName(filePath)
+	return filePath[len(volume):]
 }
