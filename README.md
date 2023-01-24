@@ -1,11 +1,10 @@
 
 # BackupFs
 
-Two filesystem abstraction layers working together to create a straight forward rollback mechanism for filesystem modifications.
+Multiple filesystem abstraction layers working together to create a straight forward rollback mechanism for filesystem modifications with OS-independent file paths.
+This package provides multiple filesystem abstractions which implement the spf13/afero.Fs interface as well as the optional interfaces.
 
-Requires the filesystem modifications to happen via the provided structs of this package.
-
-And a third filesystem abstraction layer that will prevent you from shooting your own foot in case both your backup location as well as your to be backed up filesystem work on the same underlying filesystem where the backup location might be a subfolder of your to be backed up filesystem.
+They require the filesystem modifications to happen via the provided structs of this package.
 
 ## Example Use Case
 
@@ -14,7 +13,7 @@ The pattern consists of a simple interface.
 
 ```go
 type Command interface {
-	Execute() error
+	Do() error
 	Undo() error
 }
 ```
@@ -46,15 +45,21 @@ are to be strictly separated from **side effects causing commands**
 
 then you will have a much easier time!
 
+## VolumeFs
+
+`VolumeFs` is a filesystem abstraction layer that hides Windows volumes from file system operations.
+It allows to define a volume of operation like `c:` or `C:` which is then the only volume that can be accessed.
+This abstraction layer allows to operate on filesystems with operating system independent paths.
+
 ## PrefixFs
 
-This package provides two filesystem abstractions which both implement the spf13/afero.Fs interface as well as the optional interfaces.
-Firstly, a struct called `PrefixFs`. As the name already suggests, PrefixFS forces a filesystem to have a specific prefix.
+`PrefixFs` forces a filesystem to have a specific prefix.
 Any attempt to escape the prefix path by directory traversal is prevented, forcing the application to stay within the designated prefix directory.
+This prefix makes the directory basically the application's root directory.
 
 ## BackupFs
 
-The second and more important part of this library is `BackupFs`.
+The most important part of this library is `BackupFs`.
 It is a filesystem abstraction that consists of two parts.
 A base filesystem and a backup filesystem.
 Any attempt to modify a file, directory or symlink in the base filesystem leads to the file being backed up to the backup filesystem.
@@ -66,7 +71,8 @@ Consecutive file modifications are ignored, as the initial file state has alread
 HiddenFs has a single purpose, that is to hide your backup location and prevent your application from seeing or modifying it.
 In case you use BackupFs to backup files that are overwritten on your operating system filesystem (OsFs), you want to define multiple filesystem layers that work together to prevent you from creating a non-terminating recursion of file backups.
 
-- The first layer is the underlying real filesystem, be it the OsFs, MemMapFs, etc.
+- The zero'th layer is the underlying real filesystem, be it the OsFs, MemMapFs, etc.
+- The first layer is a VolumeFs filesystem abstraction that removes the need to provide a volume prefix for absolute file paths when accessing files on the underlying filesystem (Windows)
 - The second layer is a PrefixFs that is provided a prefix path (backup directory location) and the above instantiated filesystem (e.g. OsFs)
 - The third layer is HiddenFs which takes the backup location as path that needs hiding and wraps the first layer in itself.
 - The fourth layer is the BackupFs layer which takes the third layer as underlying filesystem to operate on (backup location is not accessible nor viewable) and the second PrefixFs layer to backup your files to.
@@ -76,6 +82,9 @@ At the end you will create something along the lines of:
 package main
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/jxsl13/backupfs"
 	"github.com/spf13/afero"
 )
@@ -83,17 +92,18 @@ import (
 func main() {
 
 	var (
-		// first layer
-		base       = afero.NewMemMapFs()
+		// first layer: abstracts away the volume prefix (on Unix the it is an empty string)
+		volume     = filepath.VolumeName(os.Args[0]) // determined from application path
+		base       = backupfs.NewVolumeFs(volume, afero.NewMemMapFs())
 		backupPath = "/var/opt/app/backups"
 
-		// second layer
+		// second layer: abstracts away a path prefix
 		backup = backupfs.NewPrefixFs(backupPath, base)
 
-		// third layer
+		// third layer: hides the backup location in order to prevent recursion
 		masked = backupfs.NewHiddenFs(backupPath, base)
 
-		// fourth layer
+		// fourth layer: backup on write filesystem with rollback
 		backupFs = backupfs.NewBackupFs(masked, backup)
 	)
 	// you may use backupFs at this point like the os package
