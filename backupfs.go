@@ -41,12 +41,31 @@ var (
 // File is implemented by the imported directory.
 type File = afero.File
 
-// New creates a new layered backup file system that backups files from fs to backup in case that an
+// NewBackupFs creates a new layered backup file system that backups files from fs to backup in case that an
 // existing file in fs is about to be overwritten or removed.
 func NewBackupFs(base, backup afero.Fs) *BackupFs {
 	return &BackupFs{
 		base:   base,
 		backup: backup,
+
+		// this map is needed in order to keep track of non existing files
+		// consecutive changes might lead to files being backed up
+		// that were never there before
+		// but could have been written by us in the mean time.
+		// without this structure we would never know whether there was actually
+		// no previous file to be backed up.
+		baseInfos: make(map[string]os.FileInfo),
+	}
+}
+
+// NewBackupFsWithVolume creates a new layered backup file system that backups files from fs to backup in case that an
+// existing file in fs is about to be overwritten or removed.
+// Contrary to the normal backupfs this variant allows to use absolute windows paths (C:\A\B\C instead of \A\B\C)
+func NewBackupFsWithVolume(base, backup afero.Fs) *BackupFs {
+	return &BackupFs{
+		base:               base,
+		backup:             backup,
+		windowsVolumePaths: true,
 
 		// this map is needed in order to keep track of non existing files
 		// consecutive changes might lead to files being backed up
@@ -74,6 +93,10 @@ type BackupFs struct {
 	// it is not nil in case that the file existed on the base file system
 	baseInfos map[string]os.FileInfo
 	mu        sync.Mutex
+
+	// windowsVolumePaths can be set to true in order to allow fully
+	// qualified windows paths (including volume names C:\A\B\C instead of \A\B\C)
+	windowsVolumePaths bool
 }
 
 // GetBaseFs returns the fs layer that is being written to
@@ -322,7 +345,8 @@ func (fs *BackupFs) UnmarshalJSON(data []byte) error {
 
 // returns the cleaned path
 func (fs *BackupFs) realPath(name string) (path string, err error) {
-	if runtime.GOOS == "windows" && filepath.IsAbs(name) {
+	// check path for being an absolute windows path
+	if !fs.windowsVolumePaths && runtime.GOOS == "windows" && filepath.IsAbs(name) {
 		// On Windows a common mistake would be to provide an absolute OS path
 		// We could strip out the base part, but that would not be very portable.
 
@@ -873,7 +897,7 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 	return nil
 }
 
-//Chtimes changes the access and modification times of the named file
+// Chtimes changes the access and modification times of the named file
 func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
 	name, err := fs.realPath(name)
 	if err != nil {
@@ -970,7 +994,7 @@ func (fs *BackupFs) trackedLstat(name string) (os.FileInfo, bool, error) {
 	return fi, lstatCalled, nil
 }
 
-//SymlinkIfPossible changes the access and modification times of the named file
+// SymlinkIfPossible changes the access and modification times of the named file
 func (fs *BackupFs) SymlinkIfPossible(oldname, newname string) error {
 	oldname, err := fs.realPath(oldname)
 	if err != nil {
