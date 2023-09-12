@@ -37,6 +37,17 @@ type PrefixFs struct {
 }
 
 func (s *PrefixFs) prefixPath(name string) (string, error) {
+	volume := filepath.VolumeName(name)
+
+	if volume != "" {
+		// interestind for windows, as this backup mechanism does not exactly work
+		// with prefixed directories otherwise. A colon is not allowed inisde of the file path.
+		// prefix path with volume letter but without the :
+		volumeName := strings.TrimRight(volume, ":\\/")
+		nameWithoutVolume := strings.TrimLeft(name, volume)
+		name = filepath.Join(volumeName, nameWithoutVolume)
+	}
+
 	p := filepath.Join(s.prefix, filepath.Clean(name))
 	if !strings.HasPrefix(p, s.prefix) {
 		return "", os.ErrNotExist
@@ -187,7 +198,7 @@ func (s *PrefixFs) Chown(name string, uid, gid int) error {
 	return s.base.Chown(path, uid, gid)
 }
 
-//Chtimes changes the access and modification times of the named file
+// Chtimes changes the access and modification times of the named file
 func (s *PrefixFs) Chtimes(name string, atime, mtime time.Time) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
@@ -220,7 +231,7 @@ func (s *PrefixFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
 
 }
 
-//SymlinkIfPossible changes the access and modification times of the named file
+// SymlinkIfPossible changes the access and modification times of the named file
 func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
 	// links may be relative paths
 
