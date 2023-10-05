@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -14,36 +15,23 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jxsl13/backupfs/fsutils"
+	"github.com/jxsl13/backupfs/interfaces"
 	"github.com/jxsl13/backupfs/internal"
-	"github.com/spf13/afero"
 )
 
 var (
 	// assert interfaces implemented
-	_ afero.Fs        = (*BackupFs)(nil)
-	_ afero.Symlinker = (*BackupFs)(nil)
-	_ LinkOwner       = (*BackupFs)(nil)
+	_ interfaces.Fs = (*BackupFs)(nil)
 
 	// ErrRollbackFailed is returned when the rollback fails due to e.g. network problems.
 	// when this error is returned it might make sense to retry the rollback
 	ErrRollbackFailed = errors.New("rollback failed")
-
-	// ErrNoSymlink is returned when we ar enot able to backup symlinks due to any of the base filesystem or
-	// the target backup filesystem not supporting symlinks.
-	ErrNoSymlink = afero.ErrNoSymlink
-	// ErrBaseFsNoSymlink is returned in case that the base filesystem does not support symlinks
-	ErrBaseFsNoSymlink = fmt.Errorf("base filesystem: %w", ErrNoSymlink)
-
-	// ErrBackupFsNoSymlink is returned in case that the backup target filesystem does not support symlinks
-	ErrBackupFsNoSymlink = fmt.Errorf("backup filesystem: %w", ErrNoSymlink)
 )
-
-// File is implemented by the imported directory.
-type File = afero.File
 
 // NewBackupFs creates a new layered backup file system that backups files from fs to backup in case that an
 // existing file in fs is about to be overwritten or removed.
-func NewBackupFs(base, backup afero.Fs) *BackupFs {
+func NewBackupFs(base, backup interfaces.Fs) *BackupFs {
 	return &BackupFs{
 		base:   base,
 		backup: backup,
@@ -54,14 +42,14 @@ func NewBackupFs(base, backup afero.Fs) *BackupFs {
 		// but could have been written by us in the mean time.
 		// without this structure we would never know whether there was actually
 		// no previous file to be backed up.
-		baseInfos: make(map[string]os.FileInfo),
+		baseInfos: make(map[string]fs.FileInfo),
 	}
 }
 
 // NewBackupFsWithVolume creates a new layered backup file system that backups files from fs to backup in case that an
 // existing file in fs is about to be overwritten or removed.
 // Contrary to the normal backupfs this variant allows to use absolute windows paths (C:\A\B\C instead of \A\B\C)
-func NewBackupFsWithVolume(base, backup afero.Fs) *BackupFs {
+func NewBackupFsWithVolume(base, backup interfaces.Fs) *BackupFs {
 	return &BackupFs{
 		base:               base,
 		backup:             backup,
@@ -73,7 +61,7 @@ func NewBackupFsWithVolume(base, backup afero.Fs) *BackupFs {
 		// but could have been written by us in the mean time.
 		// without this structure we would never know whether there was actually
 		// no previous file to be backed up.
-		baseInfos: make(map[string]os.FileInfo),
+		baseInfos: make(map[string]fs.FileInfo),
 	}
 }
 
@@ -83,15 +71,15 @@ func NewBackupFsWithVolume(base, backup afero.Fs) *BackupFs {
 // modified.
 type BackupFs struct {
 	// base filesystem which may be overwritten
-	base afero.Fs
+	base interfaces.Fs
 	// any initially overwritten file will be backed up to this filesystem
-	backup afero.Fs
+	backup interfaces.Fs
 
 	// keeps track of base file system initial file state infos
-	// os.FileInfo may be nil in case that the file never existed on the base
+	// fs.FileInfo may be nil in case that the file never existed on the base
 	// file system.
 	// it is not nil in case that the file existed on the base file system
-	baseInfos map[string]os.FileInfo
+	baseInfos map[string]fs.FileInfo
 	mu        sync.Mutex
 
 	// windowsVolumePaths can be set to true in order to allow fully
@@ -100,17 +88,17 @@ type BackupFs struct {
 }
 
 // GetBaseFs returns the fs layer that is being written to
-func (fs *BackupFs) GetBaseFs() afero.Fs {
-	return fs.base
+func (bfs *BackupFs) GetBaseFs() interfaces.Fs {
+	return bfs.base
 }
 
 // GetBackupFs returns the fs layer that is used to store the backups
-func (fs *BackupFs) GetBackupFs() afero.Fs {
-	return fs.backup
+func (bfs *BackupFs) GetBackupFs() interfaces.Fs {
+	return bfs.backup
 }
 
 // The name of this FileSystem
-func (fs *BackupFs) Name() string {
+func (bfs *BackupFs) Name() string {
 	return "BackupFs"
 }
 
@@ -121,9 +109,9 @@ func (fs *BackupFs) Name() string {
 // modification on the backup site are skipped
 // This is a heavy weight operation which blocks the file system
 // until the rollback is done.
-func (fs *BackupFs) Rollback() error {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (bfs *BackupFs) Rollback() error {
+	bfs.mu.Lock()
+	defer bfs.mu.Unlock()
 
 	// these file sneed to be removed in a certain order, so we keep track of them
 	// from most nested to least nested files
@@ -135,11 +123,11 @@ func (fs *BackupFs) Rollback() error {
 	restoreFilePaths := make([]string, 0, 4)
 	restoreSymlinkPaths := make([]string, 0, 4)
 
-	for path, info := range fs.baseInfos {
+	for path, info := range bfs.baseInfos {
 		if info == nil {
 			// file did not exist in the base filesystem at the point of
 			// filesystem modification.
-			exists, err := internal.LExists(fs.base, path)
+			exists, err := fsutils.LExists(bfs.base, path)
 			if err == nil && exists {
 				// we will need to delete this file
 				removeBaseFiles = append(removeBaseFiles, path)
@@ -168,7 +156,7 @@ func (fs *BackupFs) Rollback() error {
 	for _, remPath := range removeBaseFiles {
 		// remove all files that were not there before the backup.
 		// ignore error, as this is a best effort restoration.
-		_ = fs.base.Remove(remPath)
+		_ = bfs.base.Remove(remPath)
 	}
 
 	// in order to iterate over parent directories before child directories
@@ -176,7 +164,7 @@ func (fs *BackupFs) Rollback() error {
 
 	for _, dirPath := range restoreDirPaths {
 		// backup -> base filesystem
-		err := internal.CopyDir(fs.base, dirPath, fs.baseInfos[dirPath])
+		err := internal.CopyDir(bfs.base, dirPath, bfs.baseInfos[dirPath])
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 		}
@@ -187,7 +175,7 @@ func (fs *BackupFs) Rollback() error {
 	sort.Strings(restoreFilePaths)
 
 	for _, filePath := range restoreFilePaths {
-		err := internal.RestoreFile(filePath, fs.baseInfos[filePath], fs.base, fs.backup)
+		err := internal.RestoreFile(filePath, bfs.baseInfos[filePath], bfs.base, bfs.backup)
 		if err != nil {
 			// in this case it might make sense to retry the rollback
 			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
@@ -201,16 +189,11 @@ func (fs *BackupFs) Rollback() error {
 	for _, symlinkPath := range restoreSymlinkPaths {
 		err := internal.RestoreSymlink(
 			symlinkPath,
-			fs.baseInfos[symlinkPath],
-			fs.base,
-			fs.backup,
-			ErrBaseFsNoSymlink,
-			ErrBackupFsNoSymlink,
+			bfs.baseInfos[symlinkPath],
+			bfs.base,
+			bfs.backup,
 		)
-		if errors.Is(err, ErrNoSymlink) {
-			// at least one of the filesystems does not support symlinks
-			break
-		} else if err != nil {
+		if err != nil {
 			// in this case it might make sense to retry the rollback
 			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 		}
@@ -225,14 +208,14 @@ func (fs *BackupFs) Rollback() error {
 	for _, symlinkPath := range restoredSymlinks {
 		// best effort deletion of backup files
 		// so we ignore the error
-		_ = fs.backup.Remove(symlinkPath)
+		_ = bfs.backup.Remove(symlinkPath)
 	}
 
 	// delete all files first
 	for _, filePath := range restoreFilePaths {
 		// best effort deletion of backup files
 		// so we ignore the error
-		_ = fs.backup.Remove(filePath)
+		_ = bfs.backup.Remove(filePath)
 	}
 
 	// we want to delete all of the backed up folders from
@@ -245,36 +228,34 @@ func (fs *BackupFs) Rollback() error {
 		// so we ignore the error
 		// we only delete directories that we did create.
 		// any user created content in directories is not touched
-		_ = fs.backup.Remove(dirPath)
+		_ = bfs.backup.Remove(dirPath)
 	}
 
 	// at this point we have successfully restored our backup and
 	// removed all of the backup files and directories
 
 	// now we can reset the internal data structure for book keeping of filesystem modifications
-	fs.baseInfos = make(map[string]os.FileInfo)
+	bfs.baseInfos = make(map[string]fs.FileInfo)
 	return nil
 }
 
-func (fs *BackupFs) Map() map[string]os.FileInfo {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (bfs *BackupFs) Map() map[string]fs.FileInfo {
+	bfs.mu.Lock()
+	defer bfs.mu.Unlock()
 
-	m := make(map[string]os.FileInfo, len(fs.baseInfos))
-	for path, info := range fs.baseInfos {
+	m := make(map[string]fs.FileInfo, len(bfs.baseInfos))
+	for path, info := range bfs.baseInfos {
 		m[path] = toFInfo(path, info)
 	}
 	return m
 }
 
-func toFInfo(path string, fi os.FileInfo) *fInfo {
+func toFInfo(path string, fi fs.FileInfo) *fInfo {
 	return &fInfo{
 		FileName:    filepath.ToSlash(path),
 		FileMode:    uint32(fi.Mode()),
 		FileModTime: fi.ModTime().UnixNano(),
 		FileSize:    fi.Size(),
-		FileUid:     internal.Uid(fi),
-		FileGid:     internal.Gid(fi),
 	}
 }
 
@@ -283,8 +264,6 @@ type fInfo struct {
 	FileMode    uint32 `json:"mode"`
 	FileModTime int64  `json:"mod_time"`
 	FileSize    int64  `json:"size"`
-	FileUid     int    `json:"uid"`
-	FileGid     int    `json:"gid"`
 }
 
 func (fi *fInfo) Name() string {
@@ -306,13 +285,13 @@ func (fi *fInfo) Sys() interface{} {
 	return nil
 }
 
-func (fs *BackupFs) MarshalJSON() ([]byte, error) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (bfs *BackupFs) MarshalJSON() ([]byte, error) {
+	bfs.mu.Lock()
+	defer bfs.mu.Unlock()
 
-	fiMap := make(map[string]*fInfo, len(fs.baseInfos))
+	fiMap := make(map[string]*fInfo, len(bfs.baseInfos))
 
-	for path, fi := range fs.baseInfos {
+	for path, fi := range bfs.baseInfos {
 		if fi == nil {
 			fiMap[path] = nil
 			continue
@@ -324,9 +303,9 @@ func (fs *BackupFs) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fiMap)
 }
 
-func (fs *BackupFs) UnmarshalJSON(data []byte) error {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (bfs *BackupFs) UnmarshalJSON(data []byte) error {
+	bfs.mu.Lock()
+	defer bfs.mu.Unlock()
 
 	fiMap := make(map[string]*fInfo)
 
@@ -335,18 +314,18 @@ func (fs *BackupFs) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	fs.baseInfos = make(map[string]os.FileInfo, len(fiMap))
+	bfs.baseInfos = make(map[string]fs.FileInfo, len(fiMap))
 	for k, v := range fiMap {
-		fs.baseInfos[k] = v
+		bfs.baseInfos[k] = v
 	}
 
 	return nil
 }
 
 // returns the cleaned path
-func (fs *BackupFs) realPath(name string) (path string, err error) {
+func (bfs *BackupFs) realPath(name string) (path string, err error) {
 	// check path for being an absolute windows path
-	if !fs.windowsVolumePaths && runtime.GOOS == "windows" && filepath.IsAbs(name) {
+	if !bfs.windowsVolumePaths && runtime.GOOS == "windows" && filepath.IsAbs(name) {
 		// On Windows a common mistake would be to provide an absolute OS path
 		// We could strip out the base part, but that would not be very portable.
 
@@ -358,10 +337,10 @@ func (fs *BackupFs) realPath(name string) (path string, err error) {
 
 // keeps track of files in the base filesystem.
 // Files are saved only once, any consecutive update is ignored.
-func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
-	_, found := fs.baseInfos[path]
+func (bfs *BackupFs) setBaseInfoIfNotFound(path string, info fs.FileInfo) {
+	_, found := bfs.baseInfos[path]
 	if !found {
-		fs.baseInfos[path] = info
+		bfs.baseInfos[path] = info
 	}
 }
 
@@ -369,22 +348,22 @@ func (fs *BackupFs) setBaseInfoIfNotFound(path string, info os.FileInfo) {
 // This is a helper function in order to NOT call the Stat method of the baseFs
 // an unnecessary amount of times for filepath sub directories when we can just lookup
 // the information in out internal filepath map
-func (fs *BackupFs) alreadyFoundBaseInfo(path string) bool {
-	_, found := fs.baseInfos[path]
+func (bfs *BackupFs) alreadyFoundBaseInfo(path string) bool {
+	_, found := bfs.baseInfos[path]
 	return found
 }
 
 // Stat returns a FileInfo describing the named file, or an error, if any happens.
 // Stat only looks at the base filesystem and returns the stat of the files at the specified path
-func (fs *BackupFs) Stat(name string) (os.FileInfo, error) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (bfs *BackupFs) Stat(name string) (fs.FileInfo, error) {
+	bfs.mu.Lock()
+	defer bfs.mu.Unlock()
 
-	return fs.stat(name)
+	return bfs.stat(name)
 }
 
-func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) stat(name string) (fs.FileInfo, error) {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "stat", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
@@ -393,36 +372,36 @@ func (fs *BackupFs) stat(name string) (os.FileInfo, error) {
 	// in order to keep track of their state as well.
 	// /root -> /root/sub/ -> /root/sub/sub1
 	// iterate parent directories and keep track of their initial state.
-	internal.IterateDirTree(filepath.Dir(name), func(subdirPath string) error {
-		if fs.alreadyFoundBaseInfo(subdirPath) {
+	fsutils.IterateDirTree(filepath.Dir(name), func(subdirPath string) error {
+		if bfs.alreadyFoundBaseInfo(subdirPath) {
 			return nil
 		}
 
 		// only in case that we have not yet visited one of the subdirs already,
 		// only then fetch the file information from the underlying baseFs
 		// we do want to ignore errors as this is only for keeping track of subdirectories
-		_, _ = fs.trackedStat(subdirPath)
+		_, _ = bfs.trackedStat(subdirPath)
 		return nil
 	})
 
-	return fs.trackedStat(name)
+	return bfs.trackedStat(name)
 }
 
 // trackedStat is the tracked variant of Stat that is called on the underlying base Fs
-func (fs *BackupFs) trackedStat(name string) (os.FileInfo, error) {
-	fi, err := fs.base.Stat(name)
+func (bfs *BackupFs) trackedStat(name string) (fs.FileInfo, error) {
+	fi, err := bfs.base.Stat(name)
 
 	// keep track of initial
 	if err != nil {
 		if oerr, ok := err.(*os.PathError); ok {
-			if oerr.Err == os.ErrNotExist || oerr.Err == syscall.ENOENT || oerr.Err == syscall.ENOTDIR {
+			if errors.Is(oerr.Err, fs.ErrNotExist) || errors.Is(oerr.Err, syscall.ENOENT) || errors.Is(oerr.Err, syscall.ENOTDIR) {
 
-				fs.setBaseInfoIfNotFound(name, nil)
+				bfs.setBaseInfoIfNotFound(name, nil)
 				return nil, err
 			}
 		}
-		if err == syscall.ENOENT {
-			fs.setBaseInfoIfNotFound(name, nil)
+		if errors.Is(err, syscall.ENOENT) {
+			bfs.setBaseInfoIfNotFound(name, nil)
 			return nil, err
 		}
 	}
@@ -431,7 +410,7 @@ func (fs *BackupFs) trackedStat(name string) (os.FileInfo, error) {
 		return nil, err
 	}
 
-	fs.setBaseInfoIfNotFound(name, fi)
+	bfs.setBaseInfoIfNotFound(name, fi)
 	return fi, nil
 }
 
@@ -439,16 +418,16 @@ func (fs *BackupFs) trackedStat(name string) (os.FileInfo, error) {
 // files that do not exist in the backupFs need to be backed up.
 // files that do exist in the backupFs either as files or in the baseInfos map as non-existing files
 // do not  need to be backed up (again)
-func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool, err error) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (bfs *BackupFs) backupRequired(path string) (info fs.FileInfo, required bool, err error) {
+	bfs.mu.Lock()
+	defer bfs.mu.Unlock()
 
-	info, found := fs.baseInfos[path]
+	info, found := bfs.baseInfos[path]
 	if !found {
 		// fill fs.baseInfos
 		// of symlink, file & directory as well as their parent directories.
-		info, _, err = fs.lstatIfPossible(path)
-		if err != nil && os.IsNotExist(err) {
+		info, err = bfs.lstat(path)
+		if err != nil && errors.Is(err, fs.ErrNotExist) {
 			// not found, no backup needed
 			return nil, false, nil
 		} else if err != nil {
@@ -466,7 +445,7 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 	// file found at base fs location
 
 	// did we already backup that file?
-	foundBackup, err := internal.LExists(fs.backup, path)
+	foundBackup, err := fsutils.LExists(bfs.backup, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -480,18 +459,18 @@ func (fs *BackupFs) backupRequired(path string) (info os.FileInfo, required bool
 	return info, true, nil
 }
 
-func (fs *BackupFs) ForceBackup(name string) (err error) {
-	name, err = fs.realPath(name)
+func (bfs *BackupFs) ForceBackup(name string) (err error) {
+	name, err = bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "force_backup", Err: fmt.Errorf("failed to clean path: %w", err), Path: name}
 	}
 
-	err = fs.tryRemoveBackup(name)
+	err = bfs.tryRemoveBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "force_backup", Err: fmt.Errorf("failed to remove backup: %w", err), Path: name}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "force_backup", Err: fmt.Errorf("backup failed: %w", err), Path: name}
 	}
@@ -499,8 +478,8 @@ func (fs *BackupFs) ForceBackup(name string) (err error) {
 	return nil
 }
 
-func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
-	_, needsBackup, err := fs.backupRequired(name)
+func (bfs *BackupFs) tryRemoveBackup(name string) (err error) {
+	_, needsBackup, err := bfs.backupRequired(name)
 	if err != nil {
 		return err
 	}
@@ -509,7 +488,7 @@ func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
 		return nil
 	}
 
-	fi, _, err := internal.LstatIfPossible(fs.backup, name)
+	fi, err := bfs.backup.Lstat(name)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -517,10 +496,10 @@ func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
 	// file not found
 	if fi == nil {
 		// nothing to remove, except internal state if it exists
-		fs.mu.Lock()
-		defer fs.mu.Unlock()
+		bfs.mu.Lock()
+		defer bfs.mu.Unlock()
 
-		delete(fs.baseInfos, name)
+		delete(bfs.baseInfos, name)
 		return nil
 	}
 
@@ -530,18 +509,18 @@ func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
 				// only delete from internal state
 				// when file has been deleted
 				// this allows to retry the deletion attempt
-				fs.mu.Lock()
-				delete(fs.baseInfos, name)
-				fs.mu.Unlock()
+				bfs.mu.Lock()
+				delete(bfs.baseInfos, name)
+				bfs.mu.Unlock()
 			}
 		}()
 		// remove file/symlink
-		return fs.backup.Remove(name)
+		return bfs.backup.Remove(name)
 	}
 
 	dirs := make([]string, 0)
 
-	err = afero.Walk(fs.backup, name, func(path string, info os.FileInfo, err error) (e error) {
+	err = fsutils.Walk(bfs.backup, name, func(path string, info fs.FileInfo, err error) (e error) {
 		// and then check for error
 		if err != nil {
 			return err
@@ -551,9 +530,9 @@ func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
 			if e == nil {
 				// delete dirs and files from internal map
 				// but only after re have removed the file successfully
-				fs.mu.Lock()
-				delete(fs.baseInfos, path)
-				fs.mu.Unlock()
+				bfs.mu.Lock()
+				delete(bfs.baseInfos, path)
+				bfs.mu.Unlock()
 			}
 		}()
 
@@ -564,7 +543,7 @@ func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
 		}
 
 		// delete files
-		return fs.backup.Remove(path)
+		return bfs.backup.Remove(path)
 	})
 	if err != nil {
 		return err
@@ -573,24 +552,24 @@ func (fs *BackupFs) tryRemoveBackup(name string) (err error) {
 	sort.Sort(internal.ByMostFilePathSeparators(dirs))
 
 	for _, dir := range dirs {
-		err = fs.backup.RemoveAll(dir)
+		err = bfs.backup.RemoveAll(dir)
 		if err != nil {
 			return err
 		}
 
 		// delete directory from internal
 		// state only after it has been actually deleted
-		fs.mu.Lock()
-		delete(fs.baseInfos, dir)
-		fs.mu.Unlock()
+		bfs.mu.Lock()
+		delete(bfs.baseInfos, dir)
+		bfs.mu.Unlock()
 	}
 
 	return nil
 }
 
-func (fs *BackupFs) tryBackup(name string) (err error) {
+func (bfs *BackupFs) tryBackup(name string) (err error) {
 
-	info, needsBackup, err := fs.backupRequired(name)
+	info, needsBackup, err := bfs.backupRequired(name)
 	if err != nil {
 		return err
 	}
@@ -604,8 +583,8 @@ func (fs *BackupFs) tryBackup(name string) (err error) {
 		dirPath = filepath.Dir(dirPath)
 	}
 
-	err = internal.IterateDirTree(dirPath, func(subDirPath string) error {
-		fi, required, err := fs.backupRequired(subDirPath)
+	err = fsutils.IterateDirTree(dirPath, func(subDirPath string) error {
+		fi, required, err := bfs.backupRequired(subDirPath)
 		if err != nil {
 			return err
 		}
@@ -614,7 +593,7 @@ func (fs *BackupFs) tryBackup(name string) (err error) {
 			return nil
 		}
 
-		return internal.CopyDir(fs.backup, subDirPath, fi)
+		return internal.CopyDir(bfs.backup, subDirPath, fi)
 	})
 	if err != nil {
 		return err
@@ -630,22 +609,20 @@ func (fs *BackupFs) tryBackup(name string) (err error) {
 	case fileMode.IsRegular():
 		// name was a path to a file
 		// create the file
-		sf, err := fs.base.Open(name)
+		sf, err := bfs.base.Open(name)
 		if err != nil {
 			return err
 		}
 		defer sf.Close()
-		return internal.CopyFile(fs.backup, name, info, sf)
+		return internal.CopyFile(bfs.backup, name, info, sf)
 
 	case fileMode&os.ModeSymlink != 0:
 		// symlink
 		return internal.CopySymlink(
-			fs.base,
-			fs.backup,
+			bfs.base,
+			bfs.backup,
 			name,
 			info,
-			ErrBackupFsNoSymlink,
-			ErrBackupFsNoSymlink,
 		)
 
 	default:
@@ -656,18 +633,18 @@ func (fs *BackupFs) tryBackup(name string) (err error) {
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (fs *BackupFs) Create(name string) (File, error) {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) Create(name string) (interfaces.File, error) {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 	// create or truncate file
-	file, err := fs.base.Create(name)
+	file, err := bfs.base.Create(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: fmt.Errorf("create failed: %w", err)}
 	}
@@ -676,18 +653,18 @@ func (fs *BackupFs) Create(name string) (File, error) {
 
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
-func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) Mkdir(name string, perm os.FileMode) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "mkdir", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "mkdir", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	err = fs.base.Mkdir(name, perm)
+	err = bfs.base.Mkdir(name, perm)
 	if err != nil {
 		return &os.PathError{Op: "mkdir", Path: name, Err: fmt.Errorf("mkdir failed: %w", err)}
 	}
@@ -696,18 +673,18 @@ func (fs *BackupFs) Mkdir(name string, perm os.FileMode) error {
 
 // MkdirAll creates a directory path and all
 // parents that does not exist yet.
-func (fs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "mkdir_all", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "mkdir_all", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	err = fs.base.MkdirAll(name, perm)
+	err = bfs.base.MkdirAll(name, perm)
 	if err != nil {
 		return &os.PathError{Op: "mkdir_all", Path: name, Err: fmt.Errorf("mkdir_all failed: %w", err)}
 	}
@@ -716,29 +693,29 @@ func (fs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (fs *BackupFs) Open(name string) (File, error) {
-	return fs.OpenFile(name, os.O_RDONLY, 0)
+func (bfs *BackupFs) Open(name string) (interfaces.File, error) {
+	return bfs.OpenFile(name, os.O_RDONLY, 0)
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (interfaces.File, error) {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
 	if flag == os.O_RDONLY {
 		// in read only mode the perm is not used.
-		return fs.base.OpenFile(name, os.O_RDONLY, 0)
+		return bfs.base.OpenFile(name, os.O_RDONLY, 0)
 	}
 
 	// not read only opening -> backup
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	file, err := fs.base.OpenFile(name, flag, perm)
+	file, err := bfs.base.OpenFile(name, flag, perm)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("open failed: %w", err)}
 	}
@@ -747,18 +724,18 @@ func (fs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (File, err
 
 // Remove removes a file identified by name, returning an error, if any
 // happens.
-func (fs *BackupFs) Remove(name string) error {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) Remove(name string) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "remove", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "remove", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	err = fs.base.Remove(name)
+	err = bfs.base.Remove(name)
 	if err != nil {
 		return &os.PathError{Op: "remove", Path: name, Err: fmt.Errorf("remove failed: %w", err)}
 	}
@@ -768,20 +745,20 @@ func (fs *BackupFs) Remove(name string) error {
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
 // not supported
-func (fs *BackupFs) RemoveAll(name string) error {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) RemoveAll(name string) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	fi, _, err := fs.LstatIfPossible(name)
+	fi, err := bfs.Lstat(name)
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: err}
 	}
 
 	// if it's a file or a symlink, directly remove it
 	if !fi.IsDir() {
-		err = fs.Remove(name)
+		err = bfs.Remove(name)
 		if err != nil {
 			return &os.PathError{Op: "remove_all", Path: name, Err: fmt.Errorf("remove failed: %w", err)}
 		}
@@ -790,7 +767,7 @@ func (fs *BackupFs) RemoveAll(name string) error {
 
 	directoryPaths := make([]string, 0, 1)
 
-	err = afero.Walk(fs.base, name, func(path string, info os.FileInfo, err error) error {
+	err = fsutils.Walk(bfs.base, name, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -803,7 +780,7 @@ func (fs *BackupFs) RemoveAll(name string) error {
 			return nil
 		}
 
-		return fs.Remove(path)
+		return bfs.Remove(path)
 	})
 
 	if err != nil {
@@ -816,7 +793,7 @@ func (fs *BackupFs) RemoveAll(name string) error {
 	sort.Sort(internal.ByMostFilePathSeparators(directoryPaths))
 
 	for _, path := range directoryPaths {
-		err = fs.Remove(path)
+		err = bfs.Remove(path)
 		if err != nil {
 			return &os.PathError{Op: "remove_all", Path: name, Err: err}
 		}
@@ -826,19 +803,19 @@ func (fs *BackupFs) RemoveAll(name string) error {
 }
 
 // Rename renames a file.
-func (fs *BackupFs) Rename(oldname, newname string) error {
-	newname, err := fs.realPath(newname)
+func (bfs *BackupFs) Rename(oldname, newname string) error {
+	newname, err := bfs.realPath(newname)
 	if err != nil {
 		return &os.PathError{Op: "rename", Path: newname, Err: fmt.Errorf("failed to clean newname: %w", err)}
 	}
 
-	oldname, err = fs.realPath(oldname)
+	oldname, err = bfs.realPath(oldname)
 	if err != nil {
 		return &os.PathError{Op: "rename", Path: oldname, Err: fmt.Errorf("failed to clean oldname: %w", err)}
 	}
 
 	// make target file known
-	err = fs.tryBackup(newname)
+	err = bfs.tryBackup(newname)
 	if err != nil {
 		return &os.PathError{Op: "rename", Path: newname, Err: fmt.Errorf("failed to backup newname: %w", err)}
 	}
@@ -847,12 +824,12 @@ func (fs *BackupFs) Rename(oldname, newname string) error {
 	// but now we know that there was no file or there
 	// was a target file that has to be backed up which was then backed up
 
-	err = fs.tryBackup(oldname)
+	err = bfs.tryBackup(oldname)
 	if err != nil {
 		return &os.PathError{Op: "rename", Path: oldname, Err: fmt.Errorf("failed to backup oldname: %w", err)}
 	}
 
-	err = fs.base.Rename(oldname, newname)
+	err = bfs.base.Rename(oldname, newname)
 	if err != nil {
 		return &os.PathError{Op: "rename", Path: oldname, Err: fmt.Errorf("renaming failed: %w", err)}
 	}
@@ -860,18 +837,18 @@ func (fs *BackupFs) Rename(oldname, newname string) error {
 }
 
 // Chmod changes the mode of the named file to mode.
-func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) Chmod(name string, mode os.FileMode) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "chmod", Path: name, Err: fmt.Errorf("failed to get clean path: %w", err)}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "chmod", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	err = fs.base.Chmod(name, mode)
+	err = bfs.base.Chmod(name, mode)
 	if err != nil {
 		return &os.PathError{Op: "chmod", Path: name, Err: fmt.Errorf("chmod failed: %w", err)}
 	}
@@ -879,18 +856,18 @@ func (fs *BackupFs) Chmod(name string, mode os.FileMode) error {
 }
 
 // Chown changes the uid and gid of the named file.
-func (fs *BackupFs) Chown(name string, uid, gid int) error {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) Chown(name string, username, groupname string) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "chown", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "chown", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	err = fs.base.Chown(name, uid, gid)
+	err = bfs.base.Chown(name, username, groupname)
 	if err != nil {
 		return &os.PathError{Op: "chown", Path: name, Err: fmt.Errorf("chown failed: %w", err)}
 	}
@@ -898,110 +875,98 @@ func (fs *BackupFs) Chown(name string, uid, gid int) error {
 }
 
 // Chtimes changes the access and modification times of the named file
-func (fs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) Chtimes(name string, atime, mtime time.Time) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "chtimes", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "chtimes", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
-	err = fs.base.Chtimes(name, atime, mtime)
+	err = bfs.base.Chtimes(name, atime, mtime)
 	if err != nil {
 		return &os.PathError{Op: "chtimes", Path: name, Err: fmt.Errorf("chtimes failed: %w", err)}
 	}
 	return nil
 }
 
-func (fs *BackupFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (bfs *BackupFs) Lstat(name string) (fs.FileInfo, error) {
+	bfs.mu.Lock()
+	defer bfs.mu.Unlock()
 
-	return fs.lstatIfPossible(name)
+	return bfs.lstat(name)
 }
 
-// lstatIfPossible has the same logic as stat
-func (fs *BackupFs) lstatIfPossible(name string) (os.FileInfo, bool, error) {
-	name, err := fs.realPath(name)
+// lstat has the same logic as stat
+func (bfs *BackupFs) lstat(name string) (fs.FileInfo, error) {
+	name, err := bfs.realPath(name)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	// we want to check all parent directories before we check the actual file.
 	// in order to keep track of their state as well.
 	// /root -> /root/sub/ -> /root/sub/sub1
 	// iterate parent directories and keep track of their initial state.
-	internal.IterateDirTree(filepath.Dir(name), func(subdirPath string) error {
-		if fs.alreadyFoundBaseInfo(subdirPath) {
+	fsutils.IterateDirTree(filepath.Dir(name), func(subdirPath string) error {
+		if bfs.alreadyFoundBaseInfo(subdirPath) {
 			return nil
 		}
 
 		// only in the case that we do not know the subdirectory already
 		// we do want to track the initial state of the sub directory.
 		// if it does not exist, it should not exist
-		_, _ = fs.trackedStat(subdirPath)
+		_, _ = bfs.trackedStat(subdirPath)
 		return nil
 	})
 
-	fi, lstatCalled, err := fs.trackedLstat(name)
+	fi, err := bfs.trackedLstat(name)
 	if err != nil {
-		return nil, lstatCalled, err
+		return nil, err
 	}
 
-	return fi, lstatCalled, nil
+	return fi, nil
 }
 
 // trackedLstat has the same logic as trackedStat but it uses Lstat instead, in case that is possible.
-func (fs *BackupFs) trackedLstat(name string) (os.FileInfo, bool, error) {
-	var (
-		fi  os.FileInfo
-		err error
-		// only set to true when lstat is called
-		lstatCalled = false
-	)
+func (bfs *BackupFs) trackedLstat(name string) (fs.FileInfo, error) {
 
-	baseLstater, ok := internal.LstaterIfPossible(fs.base)
-	if ok {
-		fi, lstatCalled, err = baseLstater.LstatIfPossible(name)
-	} else {
-		fi, err = fs.base.Stat(name)
-
-	}
+	fi, err := bfs.base.Lstat(name)
 
 	// keep track of initial
 	if err != nil {
 		if oerr, ok := err.(*os.PathError); ok {
-			if oerr.Err == os.ErrNotExist || oerr.Err == syscall.ENOENT || oerr.Err == syscall.ENOTDIR {
+			if errors.Is(oerr.Err, fs.ErrNotExist) || errors.Is(oerr.Err, syscall.ENOENT) || errors.Is(oerr.Err, syscall.ENOTDIR) {
 				// file or symlink does not exist
-				fs.setBaseInfoIfNotFound(name, nil)
-				return nil, lstatCalled, err
+				bfs.setBaseInfoIfNotFound(name, nil)
+				return nil, err
 			}
 		}
-		if err == syscall.ENOENT {
+		if errors.Is(err, syscall.ENOENT) {
 			// file or symlink does not exist
-			fs.setBaseInfoIfNotFound(name, nil)
-			return nil, lstatCalled, err
+			bfs.setBaseInfoIfNotFound(name, nil)
+			return nil, err
 		}
 	}
 
 	if err != nil {
-		return nil, lstatCalled, err
+		return nil, err
 	}
 
-	fs.setBaseInfoIfNotFound(name, fi)
-	return fi, lstatCalled, nil
+	bfs.setBaseInfoIfNotFound(name, fi)
+	return fi, nil
 }
 
-// SymlinkIfPossible changes the access and modification times of the named file
-func (fs *BackupFs) SymlinkIfPossible(oldname, newname string) error {
-	oldname, err := fs.realPath(oldname)
+// Symlink changes the access and modification times of the named file
+func (bfs *BackupFs) Symlink(oldname, newname string) error {
+	oldname, err := bfs.realPath(oldname)
 	if err != nil {
 		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: fmt.Errorf("failed to clean oldname: %w", err)}
 	}
 
-	newname, err = fs.realPath(newname)
+	newname, err = bfs.realPath(newname)
 	if err != nil {
 		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: fmt.Errorf("failed to clean newname: %w", err)}
 	}
@@ -1011,55 +976,45 @@ func (fs *BackupFs) SymlinkIfPossible(oldname, newname string) error {
 	// the old file path should not have been modified
 
 	// in case we fail to backup the symlink, we return an error
-	err = fs.tryBackup(newname)
+	err = bfs.tryBackup(newname)
 	if err != nil {
 		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: fmt.Errorf("failed to backup newname: %w", err)}
 	}
 
-	if linker, ok := fs.base.(afero.Linker); ok {
-		err = linker.SymlinkIfPossible(oldname, newname)
-		if err != nil {
-			return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: fmt.Errorf("symlink failed: %w", err)}
-		}
-		return nil
+	err = bfs.base.Symlink(oldname, newname)
+	if err != nil {
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: fmt.Errorf("symlink failed: %w", err)}
 	}
-	return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: afero.ErrNoSymlink}
+	return nil
 }
 
-func (fs *BackupFs) ReadlinkIfPossible(name string) (string, error) {
-	name, err := fs.realPath(name)
+func (bfs *BackupFs) Readlink(name string) (string, error) {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return "", &os.PathError{Op: "readlink", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	if reader, ok := fs.base.(afero.LinkReader); ok {
-		path, err := reader.ReadlinkIfPossible(name)
-		if err != nil {
-			return "", &os.PathError{Op: "readlink", Path: name, Err: fmt.Errorf("readlink failed: %w", err)}
-		}
-		return path, nil
+	path, err := bfs.base.Readlink(name)
+	if err != nil {
+		return "", &os.PathError{Op: "readlink", Path: name, Err: fmt.Errorf("readlink failed: %w", err)}
 	}
-	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
+
+	return path, nil
 }
 
-// LchownIfPossible does not fallback to chown. It does return an error in case that lchown cannot be called.
-func (fs *BackupFs) LchownIfPossible(name string, uid, gid int) error {
-	name, err := fs.realPath(name)
+// Lchown does not fallback to chown. It does return an error in case that lchown cannot be called.
+func (bfs *BackupFs) Lchown(name string, username, groupname string) error {
+	name, err := bfs.realPath(name)
 	if err != nil {
 		return &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
 	}
 
-	linkOwner, ok := fs.base.(LinkOwner)
-	if !ok {
-		return &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("base fs: %w", internal.ErrNoLchown)}
-	}
-
 	//TODO: check if the owner stays equal and then backup the file if the owner changes
 	// at this point we do modify the owner -> require backup
-	err = fs.tryBackup(name)
+	err = bfs.tryBackup(name)
 	if err != nil {
 		return &os.PathError{Op: "lchown", Path: name, Err: fmt.Errorf("failed to backup path: %w", err)}
 	}
 
-	return linkOwner.LchownIfPossible(name, uid, gid)
+	return bfs.base.Lchown(name, username, groupname)
 }

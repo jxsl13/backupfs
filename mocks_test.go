@@ -1,23 +1,25 @@
-package backupfs_test
+package backupfs
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
 
-	gomock "github.com/golang/mock/gomock"
-	"github.com/jxsl13/backupfs"
-	"github.com/jxsl13/backupfs/internal"
-	"github.com/spf13/afero"
+	"github.com/jxsl13/backupfs/fsutils"
+	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/internal/testutils"
+	"github.com/jxsl13/backupfs/mem"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-func NewTestBackupFs(mockedBase Fs) (backupLayer, backupFs Fs) {
-	m := afero.NewMemMapFs()
-	backup := backupfs.NewPrefixFs("/backup", m)
-	return backup, backupfs.NewBackupFs(mockedBase, backup)
+func NewTestMockBackupFs(mockedBase interfaces.Fs) (backupLayer, backupFs interfaces.Fs) {
+	m := mem.NewMemMapFs()
+	backup := NewPrefixFs("/backup", m)
+	return backup, NewBackupFs(mockedBase, backup)
 }
 func TestMockFsStat(t *testing.T) {
 	require := require.New(t)
@@ -35,19 +37,19 @@ func TestMockFsStat(t *testing.T) {
 
 	// also expect calls to all sub directories
 	// in order to track their state AT LEAST ONCE.
-	internal.IterateDirTree(filepath.Dir(filePath), func(subdirPath string) error {
+	fsutils.IterateDirTree(filepath.Dir(filePath), func(subdirPath string) error {
 		mf.EXPECT().Stat(subdirPath).AnyTimes().Return(nil, expectedErr)
 		return nil
 	})
 
 	// backupfs contains a broken basefile system
-	backup, fs := NewTestBackupFs(mf)
+	backup, fs := NewTestMockBackupFs(mf)
 
 	_, err := fs.Create(filePath)
 	require.Error(err)
 	require.True(errors.Is(err, expectedErr))
 
-	internal.MustNotExist(t, backup, filePath)
+	testutils.MustNotExist(t, backup, filePath)
 
 	err = fs.Remove(filePath)
 	require.Error(err)
@@ -65,29 +67,29 @@ func TestMockFsMkdir(t *testing.T) {
 
 	dirs := []struct {
 		Path  string
-		Info  os.FileInfo
+		Info  fs.FileInfo
 		Error error
 	}{
 		{
 			filepath.Clean("/test"),
-			internal.CreateMemDir("/test", 0755),
+			testutils.CreateMemDir("/test", 0o755),
 			nil,
 		},
 		{
 			filepath.Clean("/test/01"),
-			internal.CreateMemDir("/test/01", 0755),
+			testutils.CreateMemDir("/test/01", 0o755),
 			nil,
 		},
 		{
 			filepath.Clean("/test/01/mock"),
-			internal.CreateMemDir("/test/01/mock", 0755),
+			testutils.CreateMemDir("/test/01/mock", 0o755),
 			syscall.ENOENT,
 		},
 	}
 
 	// mocked base filesystem
 	mf := NewMockFs(mockCtrl)
-	//proxyFs := afero.NewMemMapFs()
+	//proxyFs := mem.NewMemMapFs()
 	for _, d := range dirs {
 		mf.EXPECT().Stat(d.Path).AnyTimes().Return(d.Info, d.Error)
 		if d.Error == nil {
@@ -99,15 +101,15 @@ func TestMockFsMkdir(t *testing.T) {
 	}
 
 	// backupfs contains a broken basefile system
-	backup, fs := NewTestBackupFs(mf)
+	backup, fs := NewTestMockBackupFs(mf)
 
 	for _, d := range dirs {
-		err := fs.MkdirAll(d.Path, 0755)
+		err := fs.MkdirAll(d.Path, 0o755)
 		require.Truef(errors.Is(err, d.Error), "expected error %v, got error %v", d.Error, err)
 		if err != nil {
-			internal.MustNotExist(t, backup, d.Path)
+			testutils.MustNotExist(t, backup, d.Path)
 		} else {
-			internal.MustExist(t, backup, d.Path)
+			testutils.MustExist(t, backup, d.Path)
 		}
 	}
 

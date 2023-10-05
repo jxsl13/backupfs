@@ -94,7 +94,7 @@ func main() {
 	var (
 		// first layer: abstracts away the volume prefix (on Unix the it is an empty string)
 		volume     = filepath.VolumeName(os.Args[0]) // determined from application path
-		base       = backupfs.NewVolumeFs(volume, afero.NewMemMapFs())
+		base       = backupfs.NewVolumeFs(volume, mem.NewMemMapFs())
 		backupPath = "/var/opt/app/backups"
 
 		// second layer: abstracts away a path prefix
@@ -129,7 +129,7 @@ import (
 	"os"
 
 	"github.com/jxsl13/backupfs"
-	"github.com/spf13/afero"
+	"github.com/jxsl13/backupfs/mem"
 )
 
 func checkErr(err error) {
@@ -143,7 +143,7 @@ func main() {
 
 	var (
 		// base filesystem
-		baseFs   = afero.NewMemMapFs()
+		baseFs   = mem.NewMemMapFs()
 		filePath = "/var/opt/test.txt"
 	)
 
@@ -193,15 +193,6 @@ func main() {
 
 	fmt.Println("Overwritten file: ", overwrittenFileContent)
 	fmt.Println("Backed up file  : ", backedupContent)
-
-	afs := afero.Afero{Fs: backupFs}
-	fi, err := afs.ReadDir("/var/opt/")
-	checkErr(err)
-
-	for _, f := range fi {
-		fmt.Println("Found name: ", f.Name())
-	}
-
 }
 ```
 

@@ -1,6 +1,7 @@
 package backupfs
 
 import (
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -8,21 +9,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jxsl13/backupfs/internal"
-	"github.com/spf13/afero"
+	"github.com/jxsl13/backupfs/interfaces"
 )
 
 // assert interfaces implemented
 var (
-	_ afero.Fs        = (*PrefixFs)(nil)
-	_ afero.Symlinker = (*PrefixFs)(nil)
-	_ LinkOwner       = (*PrefixFs)(nil)
+	_ interfaces.Fs = (*PrefixFs)(nil)
 )
 
 // NewPrefixFs creates a new file system abstraction that forces any path to be prepended with
 // the provided prefix.
 // the existence of the prefixPath existing is hidden away (errors might show full paths).
-func NewPrefixFs(prefixPath string, fs afero.Fs) *PrefixFs {
+func NewPrefixFs(prefixPath string, fs interfaces.Fs) *PrefixFs {
 	return &PrefixFs{
 		prefix: filepath.Clean(prefixPath),
 		base:   fs,
@@ -33,7 +31,7 @@ func NewPrefixFs(prefixPath string, fs afero.Fs) *PrefixFs {
 // The prefixed path is seen as the root directory.
 type PrefixFs struct {
 	prefix string
-	base   afero.Fs
+	base   interfaces.Fs
 }
 
 func (s *PrefixFs) prefixPath(name string) (string, error) {
@@ -43,7 +41,8 @@ func (s *PrefixFs) prefixPath(name string) (string, error) {
 		// interestind for windows, as this backup mechanism does not exactly work
 		// with prefixed directories otherwise. A colon is not allowed inisde of the file path.
 		// prefix path with volume letter but without the :
-		volumeName := strings.TrimRight(volume, ":\\/")
+		// Always make volume uppercased.
+		volumeName := strings.ToUpper(strings.TrimRight(volume, ":\\/"))
 		nameWithoutVolume := strings.TrimLeft(name, volume)
 		name = filepath.Join(volumeName, nameWithoutVolume)
 	}
@@ -57,7 +56,7 @@ func (s *PrefixFs) prefixPath(name string) (string, error) {
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (s *PrefixFs) Create(name string) (File, error) {
+func (s *PrefixFs) Create(name string) (interfaces.File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -93,7 +92,7 @@ func (s *PrefixFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (s *PrefixFs) Open(name string) (File, error) {
+func (s *PrefixFs) Open(name string) (interfaces.File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -108,7 +107,7 @@ func (s *PrefixFs) Open(name string) (File, error) {
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (s *PrefixFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+func (s *PrefixFs) OpenFile(name string, flag int, perm os.FileMode) (interfaces.File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -159,7 +158,7 @@ func (s *PrefixFs) Rename(oldname, newname string) error {
 
 // Stat returns a FileInfo describing the named file, or an error, if any
 // happens.
-func (s *PrefixFs) Stat(name string) (os.FileInfo, error) {
+func (s *PrefixFs) Stat(name string) (fs.FileInfo, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -189,13 +188,13 @@ func (s *PrefixFs) Chmod(name string, mode os.FileMode) error {
 }
 
 // Chown changes the uid and gid of the named file.
-func (s *PrefixFs) Chown(name string, uid, gid int) error {
+func (s *PrefixFs) Chown(name string, username, group string) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
 	}
 
-	return s.base.Chown(path, uid, gid)
+	return s.base.Chown(path, username, group)
 }
 
 // Chtimes changes the access and modification times of the named file
@@ -207,32 +206,24 @@ func (s *PrefixFs) Chtimes(name string, atime, mtime time.Time) error {
 	return s.base.Chtimes(path, atime, mtime)
 }
 
-// LstatIfPossible will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
+// Lstat will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
 // Else it will call Stat.
 // In addtion to the FileInfo, it will return a boolean telling whether Lstat was called or not.
-func (s *PrefixFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
+func (s *PrefixFs) Lstat(name string) (fs.FileInfo, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	if l, ok := s.base.(afero.Lstater); ok {
-		// implements interface
-		fi, lstatCalled, err := l.LstatIfPossible(path)
-		if err != nil {
-			return nil, lstatCalled, err
-		}
-		return newPrefixFileInfo(fi, s.prefix), lstatCalled, nil
+	fi, err := s.base.Lstat(path)
+	if err != nil {
+		return nil, err
 	}
-
-	// does not implement lstat, fallback to stat
-	fi, err := s.base.Stat(path)
-	return newPrefixFileInfo(fi, s.prefix), false, err
-
+	return newPrefixFileInfo(fi, s.prefix), nil
 }
 
-// SymlinkIfPossible changes the access and modification times of the named file
-func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
+// Symlink changes the access and modification times of the named file
+func (s *PrefixFs) Symlink(oldname, newname string) error {
 	// links may be relative paths
 
 	var (
@@ -257,42 +248,31 @@ func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
 		return err
 	}
 
-	if l, ok := s.base.(afero.Linker); ok {
-		// implements interface
-		err := l.SymlinkIfPossible(oldPath, newPath)
-		if err != nil {
-			return err
-		}
-		return nil
+	err = s.base.Symlink(oldPath, newPath)
+	if err != nil {
+		return err
 	}
-	return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: afero.ErrNoSymlink}
+	return nil
 }
 
-func (s *PrefixFs) ReadlinkIfPossible(name string) (string, error) {
+func (s *PrefixFs) Readlink(name string) (string, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return "", err
 	}
 
-	if reader, ok := s.base.(afero.LinkReader); ok {
-		linkedPath, err := reader.ReadlinkIfPossible(path)
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimPrefix(linkedPath, s.prefix), nil
+	linkedPath, err := s.base.Readlink(path)
+	if err != nil {
+		return "", err
 	}
-
-	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
+	return strings.TrimPrefix(linkedPath, s.prefix), nil
 }
 
-func (s *PrefixFs) LchownIfPossible(name string, uid, gid int) error {
+func (s *PrefixFs) Lchown(name string, username, group string) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
 	}
 
-	if linkOwner, ok := s.base.(LinkOwner); ok {
-		return linkOwner.LchownIfPossible(path, uid, gid)
-	}
-	return &os.PathError{Op: "lchown", Path: name, Err: internal.ErrNoLchown}
+	return s.base.Lchown(path, username, group)
 }

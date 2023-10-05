@@ -4,11 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/afero"
+	"github.com/jxsl13/backupfs/fsutils"
+	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/osutils"
 )
 
 var (
@@ -27,39 +30,6 @@ var (
 		return fmt.Errorf("%w: %v", ErrCopyDirFailed, err)
 	}
 )
-
-func IterateDirTree(name string, visitor func(string) error) error {
-	name = filepath.Clean(name)
-
-	create := false
-	lastIndex := 0
-	for i, r := range name {
-		if i == 0 && r == filepath.Separator {
-			continue
-		}
-		create = false
-
-		if r == '/' {
-			create = true
-			lastIndex = i
-		}
-		if i == len(name)-1 {
-			create = true
-			lastIndex = i + 1
-		}
-
-		if create {
-			// /path -> /path/subpath -> /path/subpath/subsubpath etc.
-			dirPath := name[:lastIndex]
-			err := visitor(dirPath)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
 
 // IgnorableChownError is solely used in Chown
 func IgnorableChownError(err error) error {
@@ -96,7 +66,7 @@ func IgnorableChtimesError(err error) error {
 	}
 }
 
-func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
+func CopyDir(fs interfaces.Fs, name string, info fs.FileInfo) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%w: %s", ErrDirInfoExpected, name)
 	}
@@ -108,7 +78,7 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 		return err
 	}
 
-	newDirInfo, _, err := LstatIfPossible(fs, name)
+	newDirInfo, err := fs.Lstat(name)
 	if err != nil {
 		return errWrapCopyDirFailed(err)
 	}
@@ -132,9 +102,7 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 		}
 	}
 
-	// https://pkg.go.dev/os#Chown
-	// Windows & Plan9 not supported
-	err = IgnorableChownError(Chown(info, name, fs))
+	err = Chown(info, name, fs)
 	if err != nil {
 		return err
 	}
@@ -142,7 +110,7 @@ func CopyDir(fs afero.Fs, name string, info os.FileInfo) error {
 	return nil
 }
 
-func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File) error {
+func CopyFile(fs interfaces.Fs, name string, info fs.FileInfo, sourceFile interfaces.File) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: %s", ErrFileInfoExpected, name)
 	}
@@ -165,7 +133,7 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 		return errWrapCopyFileFailed(err)
 	}
 
-	newFileInfo, _, err := LstatIfPossible(fs, name)
+	newFileInfo, err := fs.Lstat(name)
 	if err != nil {
 		return errWrapCopyFileFailed(err)
 	}
@@ -188,70 +156,82 @@ func CopyFile(fs afero.Fs, name string, info os.FileInfo, sourceFile afero.File)
 		}
 	}
 
-	// might cause a windows error that this function is not implemented by the OS
-	// in a unix fassion
-	// permission and not implemented errors are ignored
-	err = IgnorableChownError(Chown(info, name, fs))
-	if err != nil {
-		return errWrapCopyFileFailed(err)
-	}
+	/*
+		// TODO: we will need to fix the file owner at some point
+		// might cause a windows error that this function is not implemented by the OS
+		// in a unix fassion
+		// permission and not implemented errors are ignored
+		err = IgnorableChownError(Chown(info, name, fs))
+		if err != nil {
+			return errWrapCopyFileFailed(err)
+		}
+	*/
 
 	return nil
 }
 
-type SymlinkerFs interface {
-	afero.Fs
-	afero.Symlinker
-	LinkOwner
-}
+func CopySymlink(source, target interfaces.Fs, name string, info fs.FileInfo) error {
 
-func CopySymlink(source, target afero.Fs, name string, info os.FileInfo, errBaseFsNoSymlink, errBackupFsNoSymlink error) error {
-
-	if info.Mode()&os.ModeType&os.ModeSymlink == 0 {
+	if info.Mode()&fs.ModeType&fs.ModeSymlink == 0 {
 		return fmt.Errorf("%w: %s", ErrSymlinkInfoExpected, name)
 	}
 
-	baseFs, ok := source.(SymlinkerFs)
-	if !ok {
-		return errBaseFsNoSymlink
-	}
-
-	backupFs, ok := target.(SymlinkerFs)
-	if !ok {
-		return errBackupFsNoSymlink
-	}
-
-	pointsAt, err := baseFs.ReadlinkIfPossible(name)
+	pointsAt, err := source.Readlink(name)
 	if err != nil {
 		return err
 	}
 
-	err = backupFs.SymlinkIfPossible(pointsAt, name)
+	err = target.Symlink(pointsAt, name)
 	if err != nil {
 		return err
 	}
+	return nil
 
-	return IgnorableChownError(backupFs.LchownIfPossible(name, Uid(info), Gid(info)))
+	/*
+		// TODO: might need to fix file owner
+		user, err := OwnerUser(name, info)
+		if err != nil {
+			return err
+		}
+		group, err := OwnerGroup(name, info)
+		if err != nil {
+			return err
+		}
+
+		return target.Lchown(name, user, group)
+	*/
 }
 
 // Chown is an operating system dependent implementation.
-// only tries to change owner in cas ethat the owner differs
-func Chown(from os.FileInfo, toName string, fs afero.Fs) error {
+// only tries to change owner in case that the owner differs
+func Chown(from fs.FileInfo, toName string, fs interfaces.Fs) error {
 
-	oldOwnerFi, _, err := LstatIfPossible(fs, toName)
+	oldOwnerFi, err := fs.Lstat(toName)
 	if err != nil {
 		return fmt.Errorf("lstat for chown failed: %w", err)
 	}
 
-	oldUid := Uid(oldOwnerFi)
-	oldGid := Gid(oldOwnerFi)
+	oldUser, err := osutils.OwnerGroup(toName, oldOwnerFi)
+	if err != nil {
+		return err
+	}
+	oldGroup, err := Groupname(toName, oldOwnerFi)
+	if err != nil {
+		return err
+	}
 
-	newUid := Uid(from)
-	newGid := Gid(from)
+	newUser, err := Username(toName, oldOwnerFi)
+	if err != nil {
+		return err
+	}
+	newGroup, err := Groupname(toName, oldOwnerFi)
+	if err != nil {
+		return err
+	}
 
 	// only update when something changed
-	if oldUid != newUid || oldGid != newGid {
-		err = fs.Chown(toName, Uid(from), Gid(from))
+	if oldUser != newUser || oldGroup != newGroup {
+		err = fs.Chown(toName, newUser, newGroup)
 		if err != nil {
 			return err
 		}
@@ -259,7 +239,7 @@ func Chown(from os.FileInfo, toName string, fs afero.Fs) error {
 	return nil
 }
 
-func RestoreFile(name string, backupFi os.FileInfo, base, backup afero.Fs) error {
+func RestoreFile(name string, backupFi fs.FileInfo, base, backup interfaces.Fs) error {
 	f, err := backup.Open(name)
 	if err != nil {
 		// best effort, if backup was tempered with, we cannot restore the file.
@@ -299,14 +279,14 @@ func RestoreFile(name string, backupFi os.FileInfo, base, backup afero.Fs) error
 	return nil
 }
 
-func RestoreSymlink(name string, backupFi os.FileInfo, base, backup afero.Fs, errBaseFsNoSymlink, errBackupFsNoSymlink error) error {
-	exists, err := LExists(backup, name)
+func RestoreSymlink(name string, backupFi fs.FileInfo, base, backup interfaces.Fs) error {
+	exists, err := fsutils.LExists(backup, name)
 	if err != nil || !exists {
 		// best effort, if backup broken, we cannot restore
 		return nil
 	}
 
-	newFileExists, err := LExists(base, name)
+	newFileExists, err := fsutils.LExists(base, name)
 	if err == nil && newFileExists {
 		// remove dir/symlink/etc and create a new symlink there
 		err = base.RemoveAll(name)
@@ -319,77 +299,7 @@ func RestoreSymlink(name string, backupFi os.FileInfo, base, backup afero.Fs, er
 	}
 
 	// try to restore symlink
-	return CopySymlink(backup, base, name, backupFi, errBaseFsNoSymlink, errBackupFsNoSymlink)
-}
-
-// Check if a file or directory exists.
-func Exists(fs afero.Fs, path string) (bool, error) {
-	_, err := fs.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
-}
-
-// Check if a symlin, file or directory exists.
-func LExists(fs afero.Fs, path string) (bool, error) {
-	lstater, ok := fs.(afero.Lstater)
-	if !ok {
-		return Exists(fs, path)
-	}
-
-	_, _, err := lstater.LstatIfPossible(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-
-	if err == nil {
-		return true, nil
-	}
-	return false, err
-}
-
-// Check if interface is implemented
-func LstaterIfPossible(fs afero.Fs) (afero.Lstater, bool) {
-	lstater, ok := fs.(afero.Lstater)
-	if ok {
-		return lstater, true
-	}
-	return nil, false
-}
-
-// LstatIfPossible uses Lstat or stat in case it is possible.
-// returns the fileinfo of the symlink or of the linked file or of the file in
-// case there is no symlink. The second return value returns true in case Lstat
-// was actually called, false otherwise.
-func LstatIfPossible(fs afero.Fs, path string) (os.FileInfo, bool, error) {
-	lstater, ok := fs.(afero.Lstater)
-	if ok {
-		fi, b, err := lstater.LstatIfPossible(path)
-		if fi == nil {
-			return nil, b, err
-		}
-		return fi, b, nil
-	}
-	fi, err := fs.Stat(path)
-	if fi == nil {
-		return nil, false, err
-	}
-
-	return fi, false, nil
-}
-
-// tries lchown, does not guarantee success
-func LchownIfPossible(fs afero.Fs, name string, uid, gid int) error {
-	linkOwner, ok := fs.(LinkOwner)
-	if !ok {
-		return nil
-	}
-
-	return linkOwner.LchownIfPossible(name, uid, gid)
+	return CopySymlink(backup, base, name, backupFi)
 }
 
 // current OS filepath separator / or \

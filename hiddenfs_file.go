@@ -3,16 +3,16 @@ package backupfs
 import (
 	"errors"
 	"io"
-	"os"
+	"io/fs"
 	"path/filepath"
 
+	"github.com/jxsl13/backupfs/interfaces"
 	"github.com/jxsl13/backupfs/internal"
-	"github.com/spf13/afero"
 )
 
-var _ afero.File = (*HiddenFsFile)(nil)
+var _ interfaces.File = (*HiddenFsFile)(nil)
 
-func newHiddenFsFile(f afero.File, filePath string, hiddenPaths []string) *HiddenFsFile {
+func newHiddenFsFile(f interfaces.File, filePath string, hiddenPaths []string) *HiddenFsFile {
 	return &HiddenFsFile{
 		filePath:    filePath,
 		f:           f,
@@ -21,7 +21,7 @@ func newHiddenFsFile(f afero.File, filePath string, hiddenPaths []string) *Hidde
 }
 
 type HiddenFsFile struct {
-	f           afero.File
+	f           interfaces.File
 	filePath    string
 	hiddenPaths []string
 }
@@ -29,12 +29,12 @@ type HiddenFsFile struct {
 func (hf *HiddenFsFile) Name() string {
 	return hf.f.Name()
 }
-func (hf *HiddenFsFile) Readdir(count int) ([]os.FileInfo, error) {
-	var availableFiles []os.FileInfo
+func (hf *HiddenFsFile) Readdir(count int) ([]fs.FileInfo, error) {
+	var availableFiles []fs.FileInfo
 	if count > 0 {
-		availableFiles = make([]os.FileInfo, 0, count)
+		availableFiles = make([]fs.FileInfo, 0, count)
 	} else {
-		availableFiles = make([]os.FileInfo, 0)
+		availableFiles = make([]fs.FileInfo, 0)
 	}
 
 	// extra case where no io.EOF error is returned
@@ -134,7 +134,7 @@ func (hf *HiddenFsFile) Readdirnames(count int) ([]string, error) {
 
 	return availableFiles, nil
 }
-func (hf *HiddenFsFile) Stat() (os.FileInfo, error) {
+func (hf *HiddenFsFile) Stat() (fs.FileInfo, error) {
 	return hf.f.Stat()
 }
 func (hf *HiddenFsFile) Sync() error {

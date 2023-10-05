@@ -1,6 +1,3 @@
-//go:build go1.18
-// +build go1.18
-
 package backupfs
 
 import (
@@ -21,7 +18,7 @@ func FuzzHiddenFsCreate(f *testing.F) {
 		// should not be able to create a file in that directory
 
 		fs.Create(filePath)
-		fs.MkdirAll(filePath, 0755)
+		fs.MkdirAll(filePath, 0o755)
 		fs.RemoveAll(filePath)
 
 		// anything in the hidden directory must stay as is

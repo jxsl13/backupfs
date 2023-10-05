@@ -5,24 +5,25 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jxsl13/backupfs/interfaces"
 	"github.com/jxsl13/backupfs/internal"
-	"github.com/spf13/afero"
+	"github.com/jxsl13/backupfs/mem"
 	"github.com/stretchr/testify/require"
 )
 
-func NewTestTempdirHiddenFs(hiddenPaths ...string) (base afero.Fs, hfs *HiddenFs) {
+func NewTestTempdirHiddenFs(hiddenPaths ...string) (base interfaces.Fs, hfs *HiddenFs) {
 	base = NewTempdirPrefixFs("/hidefs")
 	return base, NewHiddenFs(base, hiddenPaths...)
 }
 
 // creates a new memmap for every test
 // contrary to the other function that only creates a single memmap
-func NewTestMemMapHiddenFs(hiddenPaths ...string) (base afero.Fs, hfs *HiddenFs) {
-	base = afero.NewMemMapFs()
+func NewTestMemMapHiddenFs(hiddenPaths ...string) (base interfaces.Fs, hfs *HiddenFs) {
+	base = mem.NewMemMapFs()
 	return base, NewHiddenFs(base, hiddenPaths...)
 }
 
-func SetupTempDirHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base afero.Fs, fs *HiddenFs) {
+func SetupTempDirHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base interfaces.Fs, fs *HiddenFs) {
 	hiddenDirParent = "/var/opt"
 	hiddenDir = "/var/opt/backups"
 	hiddenFile = "hidden_file.txt"
@@ -30,14 +31,14 @@ func SetupTempDirHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenF
 	// prepare base filesystem before using the hidden fs layer
 	base, fs = NewTestTempdirHiddenFs(hiddenDir)
 
-	internal.Mkdir(t, base, hiddenDirParent, 0775)
-	internal.MkdirAll(t, base, hiddenDir, 0775)
+	internal.Mkdir(t, base, hiddenDirParent, 0o775)
+	internal.MkdirAll(t, base, hiddenDir, 0o775)
 	internal.CreateFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
 
 	return
 }
 
-func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base afero.Fs, fs *HiddenFs) {
+func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base interfaces.Fs, fs *HiddenFs) {
 	hiddenDirParent = "/var/opt"
 	hiddenDir = "/var/opt/backups"
 	hiddenFile = "hidden_file.txt"
@@ -45,8 +46,8 @@ func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFi
 	// prepare base filesystem before using the hidden fs layer
 	base, fs = NewTestMemMapHiddenFs(hiddenDir)
 
-	internal.Mkdir(t, base, hiddenDirParent, 0775)
-	internal.MkdirAll(t, base, hiddenDir, 0775)
+	internal.Mkdir(t, base, hiddenDirParent, 0o775)
+	internal.MkdirAll(t, base, hiddenDir, 0o775)
 	internal.CreateFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
 
 	return
@@ -88,16 +89,16 @@ func TestHiddenFsMkdir(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	err := fs.Mkdir(hiddenDir, 0775)
+	err := fs.Mkdir(hiddenDir, 0o775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile), 0775)
+	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile), 0o775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile, "should_not_exist"), 0775)
+	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile, "should_not_exist"), 0o775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	internal.Mkdir(t, fs, filepath.Join(hiddenDirParent, "should_exist"), 0775)
+	internal.Mkdir(t, fs, filepath.Join(hiddenDirParent, "should_exist"), 0o775)
 
 	// at the end the hidden directory should containthe same number of files as before
 	internal.CountFiles(t, base, hiddenDir, 2)
@@ -112,16 +113,16 @@ func TestHiddenFsMkdirAll(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
+	internal.MkdirAll(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0o775)
 
-	err := fs.MkdirAll(hiddenDir, 0775)
+	err := fs.MkdirAll(hiddenDir, 0o775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	err = fs.MkdirAll(filepath.Join(hiddenDir, hiddenFile), 0775)
+	err = fs.MkdirAll(filepath.Join(hiddenDir, hiddenFile), 0o775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), 0775)
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), 0775)
+	internal.MkdirAll(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), 0o775)
+	internal.MkdirAll(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), 0o775)
 
 	// at the end the hidden directory should containthe same number of files as before
 	internal.CountFiles(t, base, hiddenDir, 2)
@@ -136,12 +137,12 @@ func TestHiddenFsOpenFile(t *testing.T) {
 	// try doing stuff in the hidden directory
 	internal.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
 	internal.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
-	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0775)
+	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0o775)
 
-	_, err := fs.OpenFile(hiddenDir, os.O_RDONLY, 0755)
+	_, err := fs.OpenFile(hiddenDir, os.O_RDONLY, 0o755)
 	require.ErrorIs(err, os.ErrNotExist)
 
-	_, err = fs.OpenFile(filepath.Join(hiddenDir, hiddenFile), os.O_RDONLY, 0755)
+	_, err = fs.OpenFile(filepath.Join(hiddenDir, hiddenFile), os.O_RDONLY, 0o755)
 	require.ErrorIs(err, os.ErrNotExist)
 
 	_, err = fs.Create(filepath.Join(hiddenDir, hiddenFile))
@@ -176,7 +177,7 @@ func TestHiddenFsRemoveAll(t *testing.T) {
 
 	internal.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
 	internal.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
-	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0775)
+	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0o775)
 
 	err := fs.RemoveAll(hiddenDirParent)
 	require.NoError(err)
@@ -186,7 +187,7 @@ func TestHiddenFsRemoveAll(t *testing.T) {
 	internal.CountFiles(t, fs, hiddenDirParent, 1)
 }
 
-func TestHiddenFsSymlinkIfPossible(t *testing.T) {
+func TestHiddenFsSymlink(t *testing.T) {
 	require := require.New(t)
 
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupTempDirHiddenFsTest(t)
@@ -201,25 +202,25 @@ func TestHiddenFsSymlinkIfPossible(t *testing.T) {
 	internal.CreateFile(t, fs, oldpath, "text")
 
 	// cannot create symlink i hidden dir
-	err := fs.SymlinkIfPossible(oldpath, hiddenDir)
+	err := fs.Symlink(oldpath, hiddenDir)
 	require.ErrorIs(err, os.ErrPermission)
 
-	err = fs.SymlinkIfPossible(oldpath, hiddenNewpath)
+	err = fs.Symlink(oldpath, hiddenNewpath)
 	require.ErrorIs(err, os.ErrPermission)
 
 	// cannot symlink into hidden dir
-	err = fs.SymlinkIfPossible(filepath.Join(hiddenDir, hiddenFile), newpath)
+	err = fs.Symlink(filepath.Join(hiddenDir, hiddenFile), newpath)
 	require.ErrorIs(err, os.ErrPermission)
 
 	// cannot symlink into hidden dir via relative path
-	err = fs.SymlinkIfPossible(filepath.Join("../../var/opt/backups", hiddenFile), newpath)
+	err = fs.Symlink(filepath.Join("../../var/opt/backups", hiddenFile), newpath)
 	require.ErrorIs(err, os.ErrPermission)
 
 	// able to create symlinks outside of hidden dir
-	err = fs.SymlinkIfPossible("../parentdirfile", newpath+"-1")
+	err = fs.Symlink("../parentdirfile", newpath+"-1")
 	require.NoError(err)
 
-	err = fs.SymlinkIfPossible(hiddenDirParent, newpath+"-2")
+	err = fs.Symlink(hiddenDirParent, newpath+"-2")
 	require.NoError(err)
 
 	// at the end the hidden directory should containthe same number of files as before
