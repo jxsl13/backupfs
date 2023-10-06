@@ -4,13 +4,13 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 )
 
-var _ interfaces.File = (*PrefixFile)(nil)
+var _ fsi.File = (*PrefixFile)(nil)
 
 type PrefixFile struct {
-	f interfaces.File
+	f fsi.File
 	// this prefix is clean due to th eFs prefix being clean
 	prefix string
 }
@@ -60,4 +60,36 @@ func (pf *PrefixFile) Write(p []byte) (n int, err error) {
 
 func (pf *PrefixFile) WriteAt(p []byte, off int64) (n int, err error) {
 	return pf.f.WriteAt(p, off)
+}
+
+func (pf *PrefixFile) SetOwnerUser(username string) (err error) {
+	return pf.f.SetOwnerUser(username)
+}
+
+func (pf *PrefixFile) SetOwnerGroup(group string) (err error) {
+	return pf.f.SetOwnerGroup(group)
+}
+
+func (pf *PrefixFile) SetOwnerUid(uid string) (err error) {
+	return pf.f.SetOwnerUid(uid)
+}
+
+func (pf *PrefixFile) SetOwnerGid(gid string) (err error) {
+	return pf.f.SetOwnerGid(gid)
+}
+
+func (pf *PrefixFile) OwnerUser() (username string, err error) {
+	return pf.f.OwnerUser()
+}
+
+func (pf *PrefixFile) OwnerGroup() (group string, err error) {
+	return pf.f.OwnerGroup()
+}
+
+func (pf *PrefixFile) OwnerUid() (uid string, err error) {
+	return pf.f.OwnerUid()
+}
+
+func (pf *PrefixFile) OwnerGid() (gid string, err error) {
+	return pf.f.OwnerGid()
 }

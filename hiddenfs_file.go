@@ -6,13 +6,13 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 	"github.com/jxsl13/backupfs/internal"
 )
 
-var _ interfaces.File = (*HiddenFsFile)(nil)
+var _ fsi.File = (*HiddenFsFile)(nil)
 
-func newHiddenFsFile(f interfaces.File, filePath string, hiddenPaths []string) *HiddenFsFile {
+func newHiddenFsFile(f fsi.File, filePath string, hiddenPaths []string) *HiddenFsFile {
 	return &HiddenFsFile{
 		filePath:    filePath,
 		f:           f,
@@ -21,7 +21,7 @@ func newHiddenFsFile(f interfaces.File, filePath string, hiddenPaths []string) *
 }
 
 type HiddenFsFile struct {
-	f           interfaces.File
+	f           fsi.File
 	filePath    string
 	hiddenPaths []string
 }
@@ -169,4 +169,36 @@ func (hf *HiddenFsFile) Write(p []byte) (n int, err error) {
 
 func (hf *HiddenFsFile) WriteAt(p []byte, off int64) (n int, err error) {
 	return hf.f.WriteAt(p, off)
+}
+
+func (hf *HiddenFsFile) SetOwnerUser(username string) (err error) {
+	return hf.f.SetOwnerUser(username)
+}
+
+func (hf *HiddenFsFile) SetOwnerGroup(group string) (err error) {
+	return hf.f.SetOwnerGroup(group)
+}
+
+func (hf *HiddenFsFile) SetOwnerUid(uid string) (err error) {
+	return hf.f.SetOwnerUid(uid)
+}
+
+func (hf *HiddenFsFile) SetOwnerGid(gid string) (err error) {
+	return hf.f.SetOwnerGid(gid)
+}
+
+func (hf *HiddenFsFile) OwnerUser() (username string, err error) {
+	return hf.f.OwnerUser()
+}
+
+func (hf *HiddenFsFile) OwnerGroup() (group string, err error) {
+	return hf.f.OwnerGroup()
+}
+
+func (hf *HiddenFsFile) OwnerUid() (uid string, err error) {
+	return hf.f.OwnerUid()
+}
+
+func (hf *HiddenFsFile) OwnerGid() (gid string, err error) {
+	return hf.f.OwnerGid()
 }

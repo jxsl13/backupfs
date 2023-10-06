@@ -7,14 +7,18 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jxsl13/backupfs/fsi"
 )
 
 const FilePathSeparator = string(filepath.Separator)
 
-var _ fs.ReadDirFile = &File{}
+var (
+	_ fsi.File       = (*File)(nil)
+	_ fs.ReadDirFile = (*File)(nil)
+)
 
 type File struct {
 	// atomic requires 64-bit alignment for struct field access
@@ -37,86 +41,22 @@ func (f File) Data() *FileData {
 	return f.fileData
 }
 
-type FileData struct {
-	sync.Mutex
-	name     string
-	data     []byte
-	memDir   Dir
-	dir      bool
-	mode     fs.FileMode
-	modtime  time.Time
-	username string
-	group    string
-}
-
-func (d *FileData) Name() string {
-	d.Lock()
-	defer d.Unlock()
-	return d.name
-}
-
-func CreateFile(name string) *FileData {
-	return &FileData{name: name, mode: os.ModeTemporary, modtime: time.Now()}
-}
-
-func CreateDir(name string) *FileData {
-	return &FileData{name: name, memDir: &DirMap{}, dir: true, modtime: time.Now()}
-}
-
-func ChangeFileName(f *FileData, newname string) {
-	f.Lock()
-	f.name = newname
-	f.Unlock()
-}
-
-func SetMode(f *FileData, mode os.FileMode) {
-	f.Lock()
-	f.mode = mode
-	f.Unlock()
-}
-
-func SetModTime(f *FileData, mtime time.Time) {
-	f.Lock()
-	setModTime(f, mtime)
-	f.Unlock()
-}
-
-func setModTime(f *FileData, mtime time.Time) {
-	f.modtime = mtime
-}
-
-func SetOwnerUser(f *FileData, username string) {
-	f.Lock()
-	f.username = username
-	f.Unlock()
-}
-
-func SetOwnerGroup(f *FileData, groupname string) {
-	f.Lock()
-	f.group = groupname
-	f.Unlock()
-}
-
-func GetFileInfo(f *FileData) *FileInfo {
-	return &FileInfo{f}
-}
-
 func (f *File) Open() error {
 	atomic.StoreInt64(&f.at, 0)
 	atomic.StoreInt64(&f.readDirCount, 0)
-	f.fileData.Lock()
+	f.fileData.mu.Lock()
 	f.closed = false
-	f.fileData.Unlock()
+	f.fileData.mu.Unlock()
 	return nil
 }
 
 func (f *File) Close() error {
-	f.fileData.Lock()
+	f.fileData.mu.Lock()
 	f.closed = true
 	if !f.readOnly {
-		setModTime(f.fileData, time.Now())
+		f.fileData.setModTime(time.Now())
 	}
-	f.fileData.Unlock()
+	f.fileData.mu.Unlock()
 	return nil
 }
 
@@ -138,7 +78,7 @@ func (f *File) Readdir(count int) (res []os.FileInfo, err error) {
 	}
 	var outLength int64
 
-	f.fileData.Lock()
+	f.fileData.mu.Lock()
 	files := f.fileData.memDir.Files()[f.readDirCount:]
 	if count > 0 {
 		if len(files) < count {
@@ -153,7 +93,7 @@ func (f *File) Readdir(count int) (res []os.FileInfo, err error) {
 		outLength = int64(len(files))
 	}
 	f.readDirCount += outLength
-	f.fileData.Unlock()
+	f.fileData.mu.Unlock()
 
 	res = make([]os.FileInfo, outLength)
 	for i := range res {
@@ -186,8 +126,8 @@ func (f *File) ReadDir(n int) ([]fs.DirEntry, error) {
 }
 
 func (f *File) Read(b []byte) (n int, err error) {
-	f.fileData.Lock()
-	defer f.fileData.Unlock()
+	f.fileData.mu.Lock()
+	defer f.fileData.mu.Unlock()
 	if f.closed {
 		return 0, ErrFileClosed
 	}
@@ -225,15 +165,15 @@ func (f *File) Truncate(size int64) error {
 	if size < 0 {
 		return ErrOutOfRange
 	}
-	f.fileData.Lock()
-	defer f.fileData.Unlock()
+	f.fileData.mu.Lock()
+	defer f.fileData.mu.Unlock()
 	if size > int64(len(f.fileData.data)) {
 		diff := size - int64(len(f.fileData.data))
-		f.fileData.data = append(f.fileData.data, bytes.Repeat([]byte{0o0}, int(diff))...)
+		f.fileData.data = append(f.fileData.data, bytes.Repeat([]byte{0x0}, int(diff))...)
 	} else {
 		f.fileData.data = f.fileData.data[0:size]
 	}
-	setModTime(f.fileData, time.Now())
+	f.fileData.setModTime(time.Now())
 	return nil
 }
 
@@ -261,21 +201,21 @@ func (f *File) Write(b []byte) (n int, err error) {
 	}
 	n = len(b)
 	cur := atomic.LoadInt64(&f.at)
-	f.fileData.Lock()
-	defer f.fileData.Unlock()
+	f.fileData.mu.Lock()
+	defer f.fileData.mu.Unlock()
 	diff := cur - int64(len(f.fileData.data))
 	var tail []byte
 	if n+int(cur) < len(f.fileData.data) {
 		tail = f.fileData.data[n+int(cur):]
 	}
 	if diff > 0 {
-		f.fileData.data = append(f.fileData.data, append(bytes.Repeat([]byte{0o0}, int(diff)), b...)...)
+		f.fileData.data = append(f.fileData.data, append(bytes.Repeat([]byte{0x0}, int(diff)), b...)...)
 		f.fileData.data = append(f.fileData.data, tail...)
 	} else {
 		f.fileData.data = append(f.fileData.data[:cur], b...)
 		f.fileData.data = append(f.fileData.data, tail...)
 	}
-	setModTime(f.fileData, time.Now())
+	f.fileData.setModTime(time.Now())
 
 	atomic.AddInt64(&f.at, int64(n))
 	return
@@ -294,51 +234,26 @@ func (f *File) Info() *FileInfo {
 	return &FileInfo{f.fileData}
 }
 
-type FileInfo struct {
-	*FileData
+func (f *File) Own() (uid, gid string, err error) {
+	return f.Data().Own()
 }
 
-// Implements os.FileInfo
-func (s *FileInfo) Name() string {
-	s.Lock()
-	_, name := filepath.Split(s.name)
-	s.Unlock()
-	return name
+func (f *File) Gid() (string, error) {
+	return f.Data().Gid(), nil
 }
 
-func (s *FileInfo) Mode() os.FileMode {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.mode
+func (f *File) Uid() (string, error) {
+	return f.Data().Uid(), nil
 }
 
-func (s *FileInfo) ModTime() time.Time {
-	s.Lock()
-	defer s.Unlock()
-	return s.modtime
+func (f *File) Chown(uid, gid string) error {
+	return f.Data().Chown(uid, gid)
 }
 
-func (s *FileInfo) IsDir() bool {
-	s.Lock()
-	defer s.Unlock()
-	return s.dir
-}
-func (s *FileInfo) Sys() interface{} { return nil }
-func (s *FileInfo) Size() int64 {
-	if s.IsDir() {
-		return int64(42)
-	}
-	s.Lock()
-	defer s.Unlock()
-	return int64(len(s.data))
+func (f *File) Chuid(uid string) error {
+	return f.Data().Chuid(uid)
 }
 
-var (
-	ErrFileClosed        = errors.New("File is closed")
-	ErrOutOfRange        = errors.New("out of range")
-	ErrTooLarge          = errors.New("too large")
-	ErrFileNotFound      = os.ErrNotExist
-	ErrFileExists        = os.ErrExist
-	ErrDestinationExists = os.ErrExist
-)
+func (f *File) Chgid(gid string) error {
+	return f.Data().Chgid(gid)
+}

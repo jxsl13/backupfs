@@ -15,14 +15,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jxsl13/backupfs/fsi"
 	"github.com/jxsl13/backupfs/fsutils"
-	"github.com/jxsl13/backupfs/interfaces"
 	"github.com/jxsl13/backupfs/internal"
 )
 
 var (
 	// assert interfaces implemented
-	_ interfaces.Fs = (*BackupFs)(nil)
+	_ fsi.Fs = (*BackupFs)(nil)
 
 	// ErrRollbackFailed is returned when the rollback fails due to e.g. network problems.
 	// when this error is returned it might make sense to retry the rollback
@@ -31,7 +31,7 @@ var (
 
 // NewBackupFs creates a new layered backup file system that backups files from fs to backup in case that an
 // existing file in fs is about to be overwritten or removed.
-func NewBackupFs(base, backup interfaces.Fs) *BackupFs {
+func NewBackupFs(base, backup fsi.Fs) *BackupFs {
 	return &BackupFs{
 		base:   base,
 		backup: backup,
@@ -49,7 +49,7 @@ func NewBackupFs(base, backup interfaces.Fs) *BackupFs {
 // NewBackupFsWithVolume creates a new layered backup file system that backups files from fs to backup in case that an
 // existing file in fs is about to be overwritten or removed.
 // Contrary to the normal backupfs this variant allows to use absolute windows paths (C:\A\B\C instead of \A\B\C)
-func NewBackupFsWithVolume(base, backup interfaces.Fs) *BackupFs {
+func NewBackupFsWithVolume(base, backup fsi.Fs) *BackupFs {
 	return &BackupFs{
 		base:               base,
 		backup:             backup,
@@ -71,9 +71,9 @@ func NewBackupFsWithVolume(base, backup interfaces.Fs) *BackupFs {
 // modified.
 type BackupFs struct {
 	// base filesystem which may be overwritten
-	base interfaces.Fs
+	base fsi.Fs
 	// any initially overwritten file will be backed up to this filesystem
-	backup interfaces.Fs
+	backup fsi.Fs
 
 	// keeps track of base file system initial file state infos
 	// fs.FileInfo may be nil in case that the file never existed on the base
@@ -88,12 +88,12 @@ type BackupFs struct {
 }
 
 // GetBaseFs returns the fs layer that is being written to
-func (bfs *BackupFs) GetBaseFs() interfaces.Fs {
+func (bfs *BackupFs) GetBaseFs() fsi.Fs {
 	return bfs.base
 }
 
 // GetBackupFs returns the fs layer that is used to store the backups
-func (bfs *BackupFs) GetBackupFs() interfaces.Fs {
+func (bfs *BackupFs) GetBackupFs() fsi.Fs {
 	return bfs.backup
 }
 
@@ -164,7 +164,7 @@ func (bfs *BackupFs) Rollback() error {
 
 	for _, dirPath := range restoreDirPaths {
 		// backup -> base filesystem
-		err := internal.CopyDir(bfs.base, dirPath, bfs.baseInfos[dirPath])
+		err := internal.CopyDir(dirPath, bfs.baseInfos[dirPath], bfs.base, bfs.backup)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 		}
@@ -633,7 +633,7 @@ func (bfs *BackupFs) tryBackup(name string) (err error) {
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (bfs *BackupFs) Create(name string) (interfaces.File, error) {
+func (bfs *BackupFs) Create(name string) (fsi.File, error) {
 	name, err := bfs.realPath(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}
@@ -693,12 +693,12 @@ func (bfs *BackupFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (bfs *BackupFs) Open(name string) (interfaces.File, error) {
+func (bfs *BackupFs) Open(name string) (fsi.File, error) {
 	return bfs.OpenFile(name, os.O_RDONLY, 0)
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (bfs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (interfaces.File, error) {
+func (bfs *BackupFs) OpenFile(name string, flag int, perm os.FileMode) (fsi.File, error) {
 	name, err := bfs.realPath(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("failed to clean path: %w", err)}

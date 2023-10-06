@@ -1,48 +1,19 @@
 package fsutils
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+
+	"github.com/jxsl13/backupfs/fsi"
 )
 
 const (
 	// ..\ or ../ depending on target os
 	RelParent = ".." + string(os.PathSeparator)
 )
-
-func IterateDirTree(name string, visitor func(string) error) error {
-	name = filepath.Clean(name)
-
-	create := false
-	lastIndex := 0
-	for i, r := range name {
-		if i == 0 && r == filepath.Separator {
-			continue
-		}
-		create = false
-
-		if r == '/' {
-			create = true
-			lastIndex = i
-		}
-		if i == len(name)-1 {
-			create = true
-			lastIndex = i + 1
-		}
-
-		if create {
-			// /path -> /path/subpath -> /path/subpath/subsubpath etc.
-			dirPath := name[:lastIndex]
-			err := visitor(dirPath)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
 
 // DirContains checks if the parent directory contains the subdir
 func DirContains(parent, subdir string) (bool, error) {
@@ -56,4 +27,68 @@ func DirContains(parent, subdir string) (bool, error) {
 	outsideOfparentDir := strings.HasPrefix(relPath, RelParent) || relPath == ".."
 
 	return !isSameDir && !outsideOfparentDir, nil
+}
+
+func IterateDirTree(f fsi.Fs, path string, visitor func(subdir string) error) (err error) {
+
+	i := len(path)
+	for i > 0 && os.IsPathSeparator(path[i-1]) { // Skip trailing path separator.
+		i--
+	}
+
+	j := i
+	for j > 0 && !os.IsPathSeparator(path[j-1]) { // Scan backward over element.
+		j--
+	}
+
+	if j > 1 {
+		// Create parent.
+		err = IterateDirTree(f, path[:j-1], visitor)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parent now exists; invoke visitor and use its result.
+	err = visitor(path)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func IterateNotExistingDirTree(f fsi.Fs, path string, visitor func(subdir string, fi fs.FileInfo) error) (err error) {
+
+	dir, err := f.Stat(path)
+	if err == nil {
+		if dir.IsDir() {
+			return nil
+		}
+		return &fs.PathError{Op: "stat", Path: path, Err: syscall.ENOTDIR}
+	}
+
+	i := len(path)
+	for i > 0 && os.IsPathSeparator(path[i-1]) { // Skip trailing path separator.
+		i--
+	}
+
+	j := i
+	for j > 0 && !os.IsPathSeparator(path[j-1]) { // Scan backward over element.
+		j--
+	}
+
+	if j > 1 {
+		// Create parent.
+		err = IterateNotExistingDirTree(f, path[:j-1], visitor)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parent now exists; invoke visitor and use its result.
+	err = visitor(path, dir)
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 )
 
 // assert interfaces implemented
 var (
-	_ interfaces.Fs = (*VolumeFs)(nil)
+	_ fsi.Fs = (*VolumeFs)(nil)
 )
 
 type volumeFile = PrefixFile
@@ -23,7 +23,7 @@ type volumeFileInfo = prefixFileInfo
 // We want to be able to decide which volume to target on Windows operating systems.
 type VolumeFs struct {
 	volume string
-	base   interfaces.Fs
+	base   fsi.Fs
 }
 
 // the passed file path must not contain any os specific volume prefix.
@@ -43,7 +43,7 @@ func (v *VolumeFs) prefixPath(name string) (string, error) {
 	return filepath.Clean(filepath.Join(v.volume, name)), nil
 }
 
-func NewVolumeFs(volume string, fs interfaces.Fs) *VolumeFs {
+func NewVolumeFs(volume string, fs fsi.Fs) *VolumeFs {
 	return &VolumeFs{
 		volume: filepath.VolumeName(volume), // this part behaves differently depending on the operating system
 		base:   fs,
@@ -52,7 +52,7 @@ func NewVolumeFs(volume string, fs interfaces.Fs) *VolumeFs {
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (v *VolumeFs) Create(name string) (interfaces.File, error) {
+func (v *VolumeFs) Create(name string) (fsi.File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (v *VolumeFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (v *VolumeFs) Open(name string) (interfaces.File, error) {
+func (v *VolumeFs) Open(name string) (fsi.File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (v *VolumeFs) Open(name string) (interfaces.File, error) {
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (v *VolumeFs) OpenFile(name string, flag int, perm os.FileMode) (interfaces.File, error) {
+func (v *VolumeFs) OpenFile(name string, flag int, perm os.FileMode) (fsi.File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err

@@ -9,30 +9,28 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/jxsl13/backupfs/fsi"
 	"github.com/jxsl13/backupfs/fsutils"
-	"github.com/jxsl13/backupfs/interfaces"
 	"github.com/jxsl13/backupfs/internal"
-	"github.com/jxsl13/backupfs/mem"
+	"github.com/jxsl13/backupfs/internal/mem"
 	"github.com/stretchr/testify/require"
 )
 
 func CreateMemDir(path string, perm os.FileMode) fs.FileInfo {
 	path = filepath.Clean(path)
 
-	fd := mem.CreateDir(path)
-	mem.SetMode(fd, os.ModeDir|perm)
-	return mem.GetFileInfo(fd)
+	fd := mem.CreateDir(path, perm)
+	return fd.FileInfo()
 }
 
-func CreateMemFile(path, content string, perm os.FileMode) interfaces.File {
+func CreateMemFile(path, content string, perm os.FileMode) fsi.File {
 	path = filepath.Clean(path)
 
-	fd := mem.CreateFile(path)
-	mem.SetMode(fd, perm)
+	fd := mem.CreateFile(path, perm)
 	return mem.NewFileHandle(fd)
 }
 
-func FileMustContainText(t *testing.T, fs interfaces.Fs, path, content string) {
+func FileMustContainText(t *testing.T, fs fsi.Fs, path, content string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -45,7 +43,7 @@ func FileMustContainText(t *testing.T, fs interfaces.Fs, path, content string) {
 	require.Equal(string(b), content)
 }
 
-func SymlinkMustExist(t *testing.T, ifs interfaces.Fs, symlinkPath string) {
+func SymlinkMustExist(t *testing.T, ifs fsi.Fs, symlinkPath string) {
 	symlinkPath = filepath.Clean(symlinkPath)
 
 	require := require.New(t)
@@ -64,7 +62,7 @@ func SymlinkMustExist(t *testing.T, ifs interfaces.Fs, symlinkPath string) {
 	require.True(actualPointsTo != "", "symlink target path is empty")
 }
 
-func SymlinkMustExistWithTragetPath(t *testing.T, ifs interfaces.Fs, symlinkPath, expectedPointsTo string) {
+func SymlinkMustExistWithTragetPath(t *testing.T, ifs fsi.Fs, symlinkPath, expectedPointsTo string) {
 	symlinkPath = filepath.Clean(symlinkPath)
 	expectedPointsTo = filepath.Clean(expectedPointsTo)
 
@@ -84,7 +82,7 @@ func SymlinkMustExistWithTragetPath(t *testing.T, ifs interfaces.Fs, symlinkPath
 
 }
 
-func MustNotExist(t *testing.T, fs interfaces.Fs, path string) {
+func MustNotExist(t *testing.T, fs fsi.Fs, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -93,7 +91,7 @@ func MustNotExist(t *testing.T, fs interfaces.Fs, path string) {
 	require.False(found, "found file path but should not exist: "+path)
 }
 
-func MustNotLExist(t *testing.T, fs interfaces.Fs, path string) {
+func MustNotLExist(t *testing.T, fs fsi.Fs, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -102,7 +100,7 @@ func MustNotLExist(t *testing.T, fs interfaces.Fs, path string) {
 	require.Falsef(found, "path found but should not exist: %s", path)
 }
 
-func MustExist(t *testing.T, fs interfaces.Fs, path string) {
+func MustExist(t *testing.T, fs fsi.Fs, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -111,7 +109,7 @@ func MustExist(t *testing.T, fs interfaces.Fs, path string) {
 	require.True(found, "file path not found but should exist: "+path)
 }
 
-func MustLExist(t *testing.T, fs interfaces.Fs, path string) {
+func MustLExist(t *testing.T, fs fsi.Fs, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -120,7 +118,7 @@ func MustLExist(t *testing.T, fs interfaces.Fs, path string) {
 	require.Truef(found, "path not found but should exist: %s", path)
 }
 
-func RemoveFile(t *testing.T, fs interfaces.Fs, path string) {
+func RemoveFile(t *testing.T, fs fsi.Fs, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -131,7 +129,7 @@ func RemoveFile(t *testing.T, fs interfaces.Fs, path string) {
 	MustNotLExist(t, fs, path)
 }
 
-func RemoveAll(t *testing.T, fs interfaces.Fs, path string) {
+func RemoveAll(t *testing.T, fs fsi.Fs, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -142,7 +140,7 @@ func RemoveAll(t *testing.T, fs interfaces.Fs, path string) {
 	MustNotLExist(t, fs, path)
 }
 
-func CreateSymlink(t *testing.T, ifs interfaces.Fs, oldpath, newpath string) {
+func CreateSymlink(t *testing.T, ifs fsi.Fs, oldpath, newpath string) {
 	require := require.New(t)
 
 	oldpath = filepath.Clean(oldpath)
@@ -153,7 +151,7 @@ func CreateSymlink(t *testing.T, ifs interfaces.Fs, oldpath, newpath string) {
 	require.NoError(err)
 
 	if !found {
-		err = ifs.MkdirAll(dirPath, 0o755)
+		err = ifs.MkdirAll(dirPath, 0755)
 		require.NoError(err)
 	}
 
@@ -162,7 +160,7 @@ func CreateSymlink(t *testing.T, ifs interfaces.Fs, oldpath, newpath string) {
 	require.NoError(err)
 
 	if !found {
-		err = ifs.MkdirAll(dirPath, 0o755)
+		err = ifs.MkdirAll(dirPath, 0755)
 		require.NoError(err)
 	}
 
@@ -191,7 +189,7 @@ func CreateSymlink(t *testing.T, ifs interfaces.Fs, oldpath, newpath string) {
 	}
 }
 
-func CreateFile(t *testing.T, fs interfaces.Fs, path, content string) {
+func CreateFile(t *testing.T, fs fsi.Fs, path, content string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -201,13 +199,13 @@ func CreateFile(t *testing.T, fs interfaces.Fs, path, content string) {
 	require.NoError(err)
 
 	if !found {
-		err = fs.MkdirAll(dirPath, 0o755)
+		err = fs.MkdirAll(dirPath, 0755)
 		require.NoError(err)
 	}
 
 	f, err := fs.Create(path)
 	require.NoError(err)
-	defer func(file interfaces.File) {
+	defer func(file fsi.File) {
 		err := f.Close()
 		require.NoError(err)
 	}(f)
@@ -216,7 +214,7 @@ func CreateFile(t *testing.T, fs interfaces.Fs, path, content string) {
 	require.Equal(ret, len(content))
 }
 
-func OpenFile(t *testing.T, fs interfaces.Fs, path, content string, perm os.FileMode) {
+func OpenFile(t *testing.T, fs fsi.Fs, path, content string, perm os.FileMode) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -226,13 +224,13 @@ func OpenFile(t *testing.T, fs interfaces.Fs, path, content string, perm os.File
 	require.NoError(err)
 
 	if !found {
-		err = fs.MkdirAll(dirPath, 0o755)
+		err = fs.MkdirAll(dirPath, 0755)
 		require.NoError(err)
 	}
 
 	f, err := fs.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, perm)
 	require.NoError(err)
-	defer func(file interfaces.File) {
+	defer func(file fsi.File) {
 		err := f.Close()
 		require.NoError(err)
 	}(f)
@@ -241,14 +239,14 @@ func OpenFile(t *testing.T, fs interfaces.Fs, path, content string, perm os.File
 	require.Equal(ret, len(content))
 }
 
-func MkdirAll(t *testing.T, fs interfaces.Fs, path string, perm os.FileMode) {
+func MkdirAll(t *testing.T, fs fsi.Fs, path string, perm os.FileMode) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
 	err := fs.MkdirAll(path, perm)
 	require.NoError(err)
 
-	err = fsutils.IterateDirTree(path, func(s string) error {
+	err = fsutils.IterateDirTree(fs, path, func(s string) error {
 		exists, err := fsutils.Exists(fs, s)
 		if err != nil {
 			return err
@@ -259,7 +257,7 @@ func MkdirAll(t *testing.T, fs interfaces.Fs, path string, perm os.FileMode) {
 	require.NoError(err)
 }
 
-func Mkdir(t *testing.T, fs interfaces.Fs, path string, perm os.FileMode) error {
+func Mkdir(t *testing.T, fs fsi.Fs, path string, perm os.FileMode) error {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
@@ -283,10 +281,10 @@ func ModeMustBeEqual(t *testing.T, a, b os.FileMode) {
 	a &= internal.ChmodBits
 	b &= internal.ChmodBits
 
-	require.Equalf(a, b, "expected: %0o got: %0o", a, b)
+	require.Equalf(a, b, "expected: %0 got: %0", a, b)
 }
 
-func Chmod(t *testing.T, ifs interfaces.Fs, path string, perm os.FileMode) {
+func Chmod(t *testing.T, ifs fsi.Fs, path string, perm os.FileMode) {
 	path = filepath.Clean(path)
 	require := require.New(t)
 
@@ -310,7 +308,7 @@ func Chmod(t *testing.T, ifs interfaces.Fs, path string, perm os.FileMode) {
 	ModeMustBeEqual(t, perm, permAfter)
 }
 
-func CountFiles(t *testing.T, ifs interfaces.Fs, path string, expectedFilesAndDirs int) {
+func CountFiles(t *testing.T, ifs fsi.Fs, path string, expectedFilesAndDirs int) {
 	require := require.New(t)
 	path = filepath.Clean(path)
 

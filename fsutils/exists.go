@@ -5,11 +5,11 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 )
 
 // Check if a file or directory exists.
-func Exists(ifs interfaces.Fs, path string) (bool, error) {
+func Exists(ifs fsi.Fs, path string) (bool, error) {
 	_, err := ifs.Stat(path)
 	if err == nil {
 		return true, nil
@@ -21,7 +21,7 @@ func Exists(ifs interfaces.Fs, path string) (bool, error) {
 }
 
 // Check if a symlin, file or directory exists.
-func LExists(fs interfaces.Fs, path string) (bool, error) {
+func LExists(fs fsi.Fs, path string) (bool, error) {
 
 	_, err := fs.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {

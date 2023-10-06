@@ -1,17 +1,17 @@
-package osfs
+package fso
 
 import (
 	"io/fs"
 	"time"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 )
 
 var (
-	_ interfaces.Fs = (*NoOpFs)(nil)
+	_ fsi.Fs = (*NoOpFs)(nil)
 )
 
-func NewNoOpFs() interfaces.Fs {
+func NewNoOpFs() fsi.Fs {
 	return &NoOpFs{}
 }
 
@@ -20,7 +20,7 @@ type NoOpFs struct{}
 
 func (NoOpFs) Name() string { return "NoOpFs" }
 
-func (NoOpFs) Create(name string) (interfaces.File, error) {
+func (NoOpFs) Create(name string) (fsi.File, error) {
 	return nil, notImplemented("create", name)
 }
 
@@ -32,11 +32,11 @@ func (NoOpFs) MkdirAll(path string, perm fs.FileMode) error {
 	return notImplemented("mkdir_all", path)
 }
 
-func (NoOpFs) Open(name string) (interfaces.File, error) {
+func (NoOpFs) Open(name string) (fsi.File, error) {
 	return nil, notImplemented("open", name)
 }
 
-func (NoOpFs) OpenFile(name string, flag int, perm fs.FileMode) (interfaces.File, error) {
+func (NoOpFs) OpenFile(name string, flag int, perm fs.FileMode) (fsi.File, error) {
 	return nil, notImplemented("open_file", name)
 }
 
@@ -68,12 +68,12 @@ func (NoOpFs) Chown(name string, username, group string) error {
 	return notImplemented("chown", name)
 }
 
-func (NoOpFs) Chtimes(name string, atime time.Time, mtime time.Time) error {
-	return notImplemented("chtimes", name)
+func (NoOpFs) Own(name string) (username, group string, err error) {
+	return "", "", notImplemented("own", name)
 }
 
-func (NoOpFs) LstatIfPossible(name string) (fs.FileInfo, bool, error) {
-	return nil, false, notImplemented("lstat", name)
+func (NoOpFs) Chtimes(name string, atime time.Time, mtime time.Time) error {
+	return notImplemented("chtimes", name)
 }
 
 func (NoOpFs) Symlink(oldname, newname string) error {
@@ -86,6 +86,10 @@ func (NoOpFs) Readlink(name string) (string, error) {
 
 func (NoOpFs) Lchown(name string, username, group string) error {
 	return notImplemented("lchown", name)
+}
+
+func (NoOpFs) Lown(name string) (username, group string, err error) {
+	return "", "", notImplemented("lown", name)
 }
 
 func notImplemented(op, path string) error {

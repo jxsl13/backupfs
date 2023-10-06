@@ -9,20 +9,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
+	"github.com/jxsl13/backupfs/fso"
+	"github.com/jxsl13/backupfs/internal/mem"
 	"github.com/jxsl13/backupfs/internal/testutils"
-	"github.com/jxsl13/backupfs/mem"
-	"github.com/jxsl13/backupfs/osfs"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	mm      interfaces.Fs
+	mm      fsi.Fs
 	mo      sync.Once
 	resetMu sync.Mutex
 )
 
-func NewTestMemMapFs() interfaces.Fs {
+func NewTestMemMapFs() fsi.Fs {
 	mo.Do(func() {
 		resetMu.Lock()
 		defer resetMu.Unlock()
@@ -45,9 +45,9 @@ func NewTestPrefixFs(prefix string) *PrefixFs {
 // this helper function is needed in order to test on the local filesystem
 // and not in memory
 func NewTempdirPrefixFs(prefix string) *PrefixFs {
-	osFs := osfs.New()
+	osFs := fso.New()
 	tmpDir := os.TempDir()
-	err := os.MkdirAll(tmpDir, 0o700)
+	err := os.MkdirAll(tmpDir, 0700)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -65,7 +65,7 @@ func NewTempdirPrefixFs(prefix string) *PrefixFs {
 	return NewPrefixFs(prefix, volumeFs)
 }
 
-func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup interfaces.Fs, backupFs *BackupFs) {
+func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup fsi.Fs, backupFs *BackupFs) {
 	root = NewTestPrefixFs("/")
 	base = NewTestPrefixFs(basePrefix)
 	backup = NewTestPrefixFs(backupPrefix)
@@ -73,7 +73,7 @@ func NewTestBackupFs(basePrefix, backupPrefix string) (root, base, backup interf
 	return root, base, backup, backupFs
 }
 
-func NewTestTempdirBackupFs(basePrefix, backupPrefix string) (base, backup interfaces.Fs, backupFs *BackupFs) {
+func NewTestTempdirBackupFs(basePrefix, backupPrefix string) (base, backup fsi.Fs, backupFs *BackupFs) {
 
 	base = NewTempdirPrefixFs(basePrefix)
 	backup = NewTempdirPrefixFs(backupPrefix)
@@ -142,14 +142,14 @@ func TestBackupFsOpenFile(t *testing.T) {
 		fileContentOverwritten      = fileContent + "_overwritten"
 		fileContentOverwrittenAgain = fileContentOverwritten + "_again"
 	)
-	testutils.OpenFile(t, base, filePath, fileContent, 0o755)
+	testutils.OpenFile(t, base, filePath, fileContent, 0755)
 
-	testutils.OpenFile(t, backupFs, filePath, fileContentOverwritten, 0o1755)
+	testutils.OpenFile(t, backupFs, filePath, fileContentOverwritten, 01755)
 
 	testutils.FileMustContainText(t, root, "base"+filePath, fileContentOverwritten)
 	testutils.FileMustContainText(t, root, "backup"+filePath, fileContent)
 
-	testutils.OpenFile(t, backupFs, filePath, fileContentOverwrittenAgain, 0o766)
+	testutils.OpenFile(t, backupFs, filePath, fileContentOverwrittenAgain, 0766)
 	testutils.FileMustContainText(t, backupFs, filePath, fileContentOverwrittenAgain)
 	testutils.FileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
 	// the backed up file should still have the same state as the first initial file
@@ -159,7 +159,7 @@ func TestBackupFsOpenFile(t *testing.T) {
 		newFilePath = "/test/02/test_02.txt"
 	)
 
-	testutils.OpenFile(t, backupFs, newFilePath, fileContent, 0o755)
+	testutils.OpenFile(t, backupFs, newFilePath, fileContent, 0755)
 	testutils.FileMustContainText(t, root, "base"+newFilePath, fileContent)
 	testutils.MustNotExist(t, root, "backup"+newFilePath)
 }
@@ -209,9 +209,9 @@ func TestBackupFsRemoveAll(t *testing.T) {
 		fileContent = "test_content"
 	)
 
-	testutils.MkdirAll(t, base, fileDir, 0o755)
-	testutils.MkdirAll(t, base, fileDir2, 0o755)
-	testutils.MkdirAll(t, base, symlinkDir, 0o755)
+	testutils.MkdirAll(t, base, fileDir, 0755)
+	testutils.MkdirAll(t, base, fileDir2, 0755)
+	testutils.MkdirAll(t, base, symlinkDir, 0755)
 
 	testutils.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
 	testutils.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
@@ -270,7 +270,7 @@ func TestBackupFsRename(t *testing.T) {
 		newerDirName = "/test/rename3"
 	)
 
-	err := base.MkdirAll(oldDirName, 0o755)
+	err := base.MkdirAll(oldDirName, 0755)
 	require.NoError(err)
 	testutils.MustExist(t, root, "base"+oldDirName)
 
@@ -318,8 +318,8 @@ func TestBackupFsRollback(t *testing.T) {
 		fileContentNew = "test_content_new"
 	)
 
-	testutils.MkdirAll(t, base, fileDir, 0o755)
-	testutils.MkdirAll(t, base, fileDir2, 0o755)
+	testutils.MkdirAll(t, base, fileDir, 0755)
+	testutils.MkdirAll(t, base, fileDir2, 0755)
 
 	testutils.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
 	testutils.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
@@ -350,7 +350,7 @@ func TestBackupFsRollback(t *testing.T) {
 	testutils.MustNotExist(t, backup, fileDir2+"/test05_new.txt")
 
 	// create subdir of deleted directory which did not exist before
-	testutils.MkdirAll(t, backupFs, "/test/001/subdir_new", 0o755)
+	testutils.MkdirAll(t, backupFs, "/test/001/subdir_new", 0755)
 	testutils.CreateFile(t, backupFs, "/test/001/subdir_new/test06_new.txt", "fileContentNew")
 
 	// must also not exist becaus ethese are new files
@@ -410,8 +410,8 @@ func TestBackupFsRollbackWithForcedBackup(t *testing.T) {
 		fileContentNew = "test_content_new"
 	)
 
-	testutils.MkdirAll(t, base, fileDir, 0o755)
-	testutils.MkdirAll(t, base, fileDir2, 0o755)
+	testutils.MkdirAll(t, base, fileDir, 0755)
+	testutils.MkdirAll(t, base, fileDir2, 0755)
 
 	testutils.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
 	testutils.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
@@ -452,7 +452,7 @@ func TestBackupFsRollbackWithForcedBackup(t *testing.T) {
 
 	testutils.FileMustContainText(t, backup, fileDir2+"/test05_new.txt", fileContentNew)
 
-	testutils.MkdirAll(t, backupFs, "/test/001/subdir_new", 0o755)
+	testutils.MkdirAll(t, backupFs, "/test/001/subdir_new", 0755)
 	testutils.CreateFile(t, backupFs, "/test/001/subdir_new/test06_new.txt", "fileContentNew")
 
 	testutils.MustNotExist(t, backup, "/test/001/subdir_new")
@@ -509,8 +509,8 @@ func TestBackupFsJSON(t *testing.T) {
 		fileContentNew = "test_content_new"
 	)
 
-	testutils.MkdirAll(t, base, fileDir, 0o755)
-	testutils.MkdirAll(t, base, fileDir2, 0o755)
+	testutils.MkdirAll(t, base, fileDir, 0755)
+	testutils.MkdirAll(t, base, fileDir2, 0755)
 
 	testutils.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
 	testutils.CreateFile(t, base, fileDir+"/test02.txt", fileContent)
@@ -541,7 +541,7 @@ func TestBackupFsJSON(t *testing.T) {
 	testutils.MustNotExist(t, backup, fileDir2+"/test05_new.txt")
 
 	// create subdir of deleted directory which did not exist before
-	testutils.MkdirAll(t, backupFs, "/test/001/subdir_new", 0o755)
+	testutils.MkdirAll(t, backupFs, "/test/001/subdir_new", 0755)
 	testutils.CreateFile(t, backupFs, "/test/001/subdir_new/test06_new.txt", "fileContentNew")
 
 	// must also not exist becaus ethese are new files
@@ -630,8 +630,8 @@ func TestBackupFs_Symlink(t *testing.T) {
 
 	// base filesystem structure and files befor emodifying
 
-	testutils.MkdirAll(t, base, fileDir, 0o755)
-	testutils.MkdirAll(t, base, fileDir2, 0o755)
+	testutils.MkdirAll(t, base, fileDir, 0755)
+	testutils.MkdirAll(t, base, fileDir2, 0755)
 
 	testutils.CreateFile(t, base, fileDir+"/test01.txt", fileContent)
 	testutils.CreateFile(t, base, fileDir2+"/test02.txt", fileContent)
@@ -700,16 +700,16 @@ func TestBackupFs_Mkdir(t *testing.T) {
 		fileDir2    = "/test/001/002"
 	)
 
-	err := testutils.Mkdir(t, base, fileDirRoot, 0o755)
+	err := testutils.Mkdir(t, base, fileDirRoot, 0755)
 	require.NoError(err)
 
-	err = testutils.Mkdir(t, backupFs, fileDir2, 0o755)
+	err = testutils.Mkdir(t, backupFs, fileDir2, 0755)
 	require.Error(err, "cannot create child directory without having created its parent")
 
-	err = testutils.Mkdir(t, backupFs, fileDir, 0o755)
+	err = testutils.Mkdir(t, backupFs, fileDir, 0755)
 	require.NoError(err)
 
-	err = testutils.Mkdir(t, backupFs, fileDir2, 0o755)
+	err = testutils.Mkdir(t, backupFs, fileDir2, 0755)
 	require.NoError(err)
 
 	testutils.RemoveAll(t, backupFs, fileDirRoot)

@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 )
 
 // readDirNames reads the directory named by dirname and returns
 // a sorted list of directory entries.
 // adapted from https://golang.org/src/path/filepath/path.go
-func readDirNames(fs interfaces.Fs, dirname string) ([]string, error) {
+func readDirNames(fs fsi.Fs, dirname string) ([]string, error) {
 	f, err := fs.Open(dirname)
 	if err != nil {
 		return nil, err
@@ -28,7 +28,7 @@ func readDirNames(fs interfaces.Fs, dirname string) ([]string, error) {
 
 // walk recursively descends path, calling walkFn
 // adapted from https://golang.org/src/path/filepath/path.go
-func walk(fs interfaces.Fs, path string, info fs.FileInfo, walkFn filepath.WalkFunc) error {
+func walk(fs fsi.Fs, path string, info fs.FileInfo, walkFn filepath.WalkFunc) error {
 	err := walkFn(path, info, nil)
 	if err != nil {
 		if info.IsDir() && errors.Is(err, filepath.SkipDir) {
@@ -66,7 +66,7 @@ func walk(fs interfaces.Fs, path string, info fs.FileInfo, walkFn filepath.WalkF
 }
 
 // Walk files
-func Walk(fs interfaces.Fs, root string, walkFn filepath.WalkFunc) error {
+func Walk(fs fsi.Fs, root string, walkFn filepath.WalkFunc) error {
 	info, err := fs.Lstat(root)
 	if err != nil {
 		return walkFn(root, nil, err)
@@ -74,7 +74,7 @@ func Walk(fs interfaces.Fs, root string, walkFn filepath.WalkFunc) error {
 	return walk(fs, root, info, walkFn)
 }
 
-func ListFiles(ifs interfaces.Fs, dir string) ([]string, error) {
+func ListFiles(ifs fsi.Fs, dir string) ([]string, error) {
 	files := make([]string, 0)
 
 	err := Walk(ifs, dir, func(path string, info fs.FileInfo, err error) error {

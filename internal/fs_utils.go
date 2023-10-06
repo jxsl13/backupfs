@@ -9,9 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jxsl13/backupfs/fsi"
 	"github.com/jxsl13/backupfs/fsutils"
-	"github.com/jxsl13/backupfs/interfaces"
-	"github.com/jxsl13/backupfs/osutils"
 )
 
 var (
@@ -66,19 +65,24 @@ func IgnorableChtimesError(err error) error {
 	}
 }
 
-func CopyDir(fs interfaces.Fs, name string, info fs.FileInfo) error {
+func CopyDir(name string, info fs.FileInfo, dst, src fsi.Fs) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to copy directody: %s: %w", name, err)
+		}
+	}()
 	if !info.IsDir() {
 		return fmt.Errorf("%w: %s", ErrDirInfoExpected, name)
 	}
 
 	// try to create all dirs as somone might have tempered with the file system
 	targetMode := info.Mode()
-	err := fs.MkdirAll(name, targetMode.Perm())
+	err = dst.MkdirAll(name, targetMode.Perm())
 	if err != nil {
 		return err
 	}
 
-	newDirInfo, err := fs.Lstat(name)
+	newDirInfo, err := dst.Lstat(name)
 	if err != nil {
 		return errWrapCopyDirFailed(err)
 	}
@@ -86,7 +90,7 @@ func CopyDir(fs interfaces.Fs, name string, info fs.FileInfo) error {
 	currentMode := newDirInfo.Mode()
 
 	if !EqualMode(currentMode, targetMode) {
-		err = fs.Chmod(name, targetMode)
+		err = dst.Chmod(name, targetMode)
 		if err != nil {
 			// TODO: do we want to fail here?
 			return err
@@ -96,158 +100,167 @@ func CopyDir(fs interfaces.Fs, name string, info fs.FileInfo) error {
 	targetModTime := info.ModTime()
 	currentModTime := newDirInfo.ModTime()
 	if !currentModTime.Equal(targetModTime) {
-		err = IgnorableChtimesError(fs.Chtimes(name, targetModTime, targetModTime))
+		err = dst.Chtimes(name, targetModTime, targetModTime)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = Chown(info, name, fs)
+	return Lchown(name, info, dst, src)
+}
+
+func CopyFile(name string, srcInfo fs.FileInfo, dst, src fsi.Fs) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to copy file %s: %w", name, err)
+		}
+	}()
+
+	if !srcInfo.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s", ErrFileInfoExpected, name)
+	}
+	targetMode := srcInfo.Mode()
+
+	srcFile, err := src.Open(name)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// same as create operation but with custom permissions
+	dstFile, err := dst.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, targetMode.Perm())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	err = Lchmod(name, srcInfo, dst, src)
+	if err != nil {
+		return err
+	}
+
+	err = Lchtimes(name, srcInfo, dst, src)
+	if err != nil {
+		return err
+	}
+
+	return Lchown(name, srcInfo, dst, src)
 }
 
-func CopyFile(fs interfaces.Fs, name string, info fs.FileInfo, sourceFile interfaces.File) error {
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("%w: %s", ErrFileInfoExpected, name)
-	}
-	//
-	targetMode := info.Mode()
+func CopySymlink(name string, srcInfo fs.FileInfo, dst, src fsi.Fs) error {
 
-	// same as create but with custom permissions
-	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, targetMode.Perm())
-	if err != nil {
-		return errWrapCopyFileFailed(err)
-	}
-
-	_, err = io.Copy(file, sourceFile)
-	if err != nil {
-		return errWrapCopyFileFailed(err)
-	}
-
-	err = file.Close()
-	if err != nil {
-		return errWrapCopyFileFailed(err)
-	}
-
-	newFileInfo, err := fs.Lstat(name)
-	if err != nil {
-		return errWrapCopyFileFailed(err)
-	}
-
-	if !EqualMode(newFileInfo.Mode(), targetMode) {
-		// not equal, update it
-		err = fs.Chmod(name, targetMode)
-		if err != nil {
-			return errWrapCopyFileFailed(err)
-		}
-	}
-
-	targetModTime := info.ModTime()
-	currentModTime := newFileInfo.ModTime()
-
-	if !currentModTime.Equal(targetModTime) {
-		err = IgnorableChtimesError(fs.Chtimes(name, targetModTime, targetModTime))
-		if err != nil {
-			return errWrapCopyFileFailed(err)
-		}
-	}
-
-	/*
-		// TODO: we will need to fix the file owner at some point
-		// might cause a windows error that this function is not implemented by the OS
-		// in a unix fassion
-		// permission and not implemented errors are ignored
-		err = IgnorableChownError(Chown(info, name, fs))
-		if err != nil {
-			return errWrapCopyFileFailed(err)
-		}
-	*/
-
-	return nil
-}
-
-func CopySymlink(source, target interfaces.Fs, name string, info fs.FileInfo) error {
-
-	if info.Mode()&fs.ModeType&fs.ModeSymlink == 0 {
+	if srcInfo.Mode()&fs.ModeType&fs.ModeSymlink == 0 {
 		return fmt.Errorf("%w: %s", ErrSymlinkInfoExpected, name)
 	}
 
-	pointsAt, err := source.Readlink(name)
+	pointsAt, err := src.Readlink(name)
 	if err != nil {
 		return err
 	}
 
-	err = target.Symlink(pointsAt, name)
+	err = dst.Symlink(pointsAt, name)
 	if err != nil {
 		return err
 	}
-	return nil
 
-	/*
-		// TODO: might need to fix file owner
-		user, err := OwnerUser(name, info)
-		if err != nil {
-			return err
-		}
-		group, err := OwnerGroup(name, info)
-		if err != nil {
-			return err
-		}
-
-		return target.Lchown(name, user, group)
-	*/
+	return Lchown(name, srcInfo, dst, src)
 }
 
-// Chown is an operating system dependent implementation.
+// Lchown is an operating system dependent implementation.
 // only tries to change owner in case that the owner differs
-func Chown(from fs.FileInfo, toName string, fs interfaces.Fs) error {
-
-	oldOwnerFi, err := fs.Lstat(toName)
-	if err != nil {
-		return fmt.Errorf("lstat for chown failed: %w", err)
-	}
-
-	oldUser, err := osutils.OwnerGroup(toName, oldOwnerFi)
-	if err != nil {
-		return err
-	}
-	oldGroup, err := Groupname(toName, oldOwnerFi)
-	if err != nil {
-		return err
-	}
-
-	newUser, err := Username(toName, oldOwnerFi)
-	if err != nil {
-		return err
-	}
-	newGroup, err := Groupname(toName, oldOwnerFi)
-	if err != nil {
-		return err
-	}
-
-	// only update when something changed
-	if oldUser != newUser || oldGroup != newGroup {
-		err = fs.Chown(toName, newUser, newGroup)
+func Lchown(name string, info fs.FileInfo, dst, src fsi.Fs) (err error) {
+	defer func() {
 		if err != nil {
-			return err
+			err = fmt.Errorf("failed to apply chown to %s: %w", name, err)
 		}
+	}()
+
+	uid, gid, err := src.Lown(name)
+	if err != nil {
+		return err
+	}
+
+	cuid, cgid, err := dst.Lown(name)
+	if err != nil {
+		return err
+	}
+
+	if uid != cuid || gid != cgid {
+		return dst.Lchown(name, uid, gid)
 	}
 	return nil
 }
 
-func RestoreFile(name string, backupFi fs.FileInfo, base, backup interfaces.Fs) error {
-	f, err := backup.Open(name)
+func Lchmod(name string, srcInfo fs.FileInfo, dst, src fsi.Fs) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to apply chmod to %s: %w", name, err)
+		}
+	}()
+
+	dstInfo, err := dst.Lstat(name)
 	if err != nil {
-		// best effort, if backup was tempered with, we cannot restore the file.
+		return err
+	}
+
+	if EqualMode(dstInfo.Mode(), srcInfo.Mode()) {
+		// nothing to do
 		return nil
 	}
-	defer f.Close()
 
-	fi, err := f.Stat()
+	return dst.Chmod(name, srcInfo.Mode())
+}
+
+func Lchtimes(name string, srcInfo fs.FileInfo, dst, src fsi.Fs) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to apply chtimes to %s: %w", name, err)
+		}
+	}()
+
+	if srcInfo == nil {
+		srcInfo, err = src.Lstat(name)
+		if err != nil {
+			return err
+		}
+	}
+
+	if srcInfo.Mode()&fs.ModeSymlink != 0 {
+		// is symlink -> nothing to do
+		return nil
+	}
+
+	dstInfo, err := dst.Lstat(name)
+	if err != nil {
+		return err
+	}
+
+	if dstInfo.Mode()&fs.ModeSymlink != 0 {
+		// should not happen
+		// is symlink -> nothing to do
+		return nil
+	}
+
+	var (
+		srcTime = srcInfo.ModTime()
+		dstTime = dstInfo.ModTime()
+	)
+
+	if srcTime.Equal(dstTime) {
+		// nothing to do
+		return nil
+	}
+
+	return dst.Chtimes(name, srcTime, srcTime)
+}
+
+func RestoreFile(name string, srcInfo fs.FileInfo, dst, src fsi.Fs) error {
+	fi, err := src.Stat(name)
 	if err != nil {
 		// best effort, see above
 		return nil
@@ -255,7 +268,7 @@ func RestoreFile(name string, backupFi fs.FileInfo, base, backup interfaces.Fs) 
 
 	if !fi.Mode().IsRegular() {
 		// remove dir/symlink/etc and create a file there
-		err = base.RemoveAll(name)
+		err = dst.RemoveAll(name)
 		if err != nil {
 			// we failed to remove the directory
 			// supposedly we cannot restore the file, as the directory still exists
@@ -263,14 +276,14 @@ func RestoreFile(name string, backupFi fs.FileInfo, base, backup interfaces.Fs) 
 		}
 	}
 
-	// in case that the application dooes not hold any backup data in memory anymore
+	// in case that the application does not hold any backup data in memory anymore
 	// we fallback to using the file permissions of the actual backed up file
-	if backupFi != nil {
-		fi = backupFi
+	if srcInfo != nil {
+		fi = srcInfo
 	}
 
 	// move file back to base system
-	err = CopyFile(base, name, backupFi, f)
+	err = CopyFile(name, srcInfo, dst, src)
 	if err != nil {
 		// failed to restore file
 		// critical error, most likely due to network problems
@@ -279,17 +292,17 @@ func RestoreFile(name string, backupFi fs.FileInfo, base, backup interfaces.Fs) 
 	return nil
 }
 
-func RestoreSymlink(name string, backupFi fs.FileInfo, base, backup interfaces.Fs) error {
-	exists, err := fsutils.LExists(backup, name)
+func RestoreSymlink(name string, srcInfo fs.FileInfo, dst, src fsi.Fs) error {
+	exists, err := fsutils.LExists(src, name)
 	if err != nil || !exists {
-		// best effort, if backup broken, we cannot restore
+		// best effort, if src broken, we cannot restore
 		return nil
 	}
 
-	newFileExists, err := fsutils.LExists(base, name)
+	newFileExists, err := fsutils.LExists(dst, name)
 	if err == nil && newFileExists {
 		// remove dir/symlink/etc and create a new symlink there
-		err = base.RemoveAll(name)
+		err = dst.RemoveAll(name)
 		if err != nil {
 			// in case we fail to remove the new file,
 			// we cannot restore the symlink
@@ -299,7 +312,7 @@ func RestoreSymlink(name string, backupFi fs.FileInfo, base, backup interfaces.F
 	}
 
 	// try to restore symlink
-	return CopySymlink(backup, base, name, backupFi)
+	return CopySymlink(name, srcInfo, dst, src)
 }
 
 // current OS filepath separator / or \

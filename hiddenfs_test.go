@@ -5,25 +5,25 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jxsl13/backupfs/interfaces"
-	"github.com/jxsl13/backupfs/internal"
-	"github.com/jxsl13/backupfs/mem"
+	"github.com/jxsl13/backupfs/fsi"
+	"github.com/jxsl13/backupfs/internal/mem"
+	"github.com/jxsl13/backupfs/internal/testutils"
 	"github.com/stretchr/testify/require"
 )
 
-func NewTestTempdirHiddenFs(hiddenPaths ...string) (base interfaces.Fs, hfs *HiddenFs) {
+func NewTestTempdirHiddenFs(hiddenPaths ...string) (base fsi.Fs, hfs *HiddenFs) {
 	base = NewTempdirPrefixFs("/hidefs")
 	return base, NewHiddenFs(base, hiddenPaths...)
 }
 
 // creates a new memmap for every test
 // contrary to the other function that only creates a single memmap
-func NewTestMemMapHiddenFs(hiddenPaths ...string) (base interfaces.Fs, hfs *HiddenFs) {
+func NewTestMemMapHiddenFs(hiddenPaths ...string) (base fsi.Fs, hfs *HiddenFs) {
 	base = mem.NewMemMapFs()
 	return base, NewHiddenFs(base, hiddenPaths...)
 }
 
-func SetupTempDirHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base interfaces.Fs, fs *HiddenFs) {
+func SetupTempDirHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base fsi.Fs, fs *HiddenFs) {
 	hiddenDirParent = "/var/opt"
 	hiddenDir = "/var/opt/backups"
 	hiddenFile = "hidden_file.txt"
@@ -31,14 +31,14 @@ func SetupTempDirHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenF
 	// prepare base filesystem before using the hidden fs layer
 	base, fs = NewTestTempdirHiddenFs(hiddenDir)
 
-	internal.Mkdir(t, base, hiddenDirParent, 0o775)
-	internal.MkdirAll(t, base, hiddenDir, 0o775)
-	internal.CreateFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
+	testutils.Mkdir(t, base, hiddenDirParent, 0775)
+	testutils.MkdirAll(t, base, hiddenDir, 0775)
+	testutils.CreateFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
 
 	return
 }
 
-func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base interfaces.Fs, fs *HiddenFs) {
+func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base fsi.Fs, fs *HiddenFs) {
 	hiddenDirParent = "/var/opt"
 	hiddenDir = "/var/opt/backups"
 	hiddenFile = "hidden_file.txt"
@@ -46,9 +46,9 @@ func SetupMemMapHiddenFsTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFi
 	// prepare base filesystem before using the hidden fs layer
 	base, fs = NewTestMemMapHiddenFs(hiddenDir)
 
-	internal.Mkdir(t, base, hiddenDirParent, 0o775)
-	internal.MkdirAll(t, base, hiddenDir, 0o775)
-	internal.CreateFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
+	testutils.Mkdir(t, base, hiddenDirParent, 0775)
+	testutils.MkdirAll(t, base, hiddenDir, 0775)
+	testutils.CreateFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
 
 	return
 }
@@ -57,8 +57,8 @@ func TestCountFiles(t *testing.T) {
 
 	hiddenDirParent, hiddenDir, _, base, fs := SetupMemMapHiddenFsTest(t)
 
-	internal.CountFiles(t, base, hiddenDir, 2)
-	internal.CountFiles(t, fs, hiddenDirParent, 1)
+	testutils.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 1)
 }
 
 func TestHiddenFsCreate(t *testing.T) {
@@ -76,11 +76,11 @@ func TestHiddenFsCreate(t *testing.T) {
 	_, err = fs.Create(filepath.Join(hiddenDir, hiddenFile))
 	require.ErrorIs(err, os.ErrPermission)
 
-	internal.CreateFile(t, fs, filepath.Join(hiddenDirParent, "test.txt"), "file content")
+	testutils.CreateFile(t, fs, filepath.Join(hiddenDirParent, "test.txt"), "file content")
 
 	// at the end the hidden directory should containthe same number of files as before
-	internal.CountFiles(t, base, hiddenDir, 2)
-	internal.CountFiles(t, fs, hiddenDirParent, 2)
+	testutils.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 2)
 }
 
 func TestHiddenFsMkdir(t *testing.T) {
@@ -89,22 +89,22 @@ func TestHiddenFsMkdir(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	err := fs.Mkdir(hiddenDir, 0o775)
+	err := fs.Mkdir(hiddenDir, 0775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile), 0o775)
+	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile), 0775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile, "should_not_exist"), 0o775)
+	err = fs.Mkdir(filepath.Join(hiddenDir, hiddenFile, "should_not_exist"), 0775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	internal.Mkdir(t, fs, filepath.Join(hiddenDirParent, "should_exist"), 0o775)
+	testutils.Mkdir(t, fs, filepath.Join(hiddenDirParent, "should_exist"), 0775)
 
 	// at the end the hidden directory should containthe same number of files as before
-	internal.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, base, hiddenDir, 2)
 
 	// created another directory next to hidenDir
-	internal.CountFiles(t, fs, hiddenDirParent, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 2)
 }
 
 func TestHiddenFsMkdirAll(t *testing.T) {
@@ -113,20 +113,20 @@ func TestHiddenFsMkdirAll(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0o775)
+	testutils.MkdirAll(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), 0775)
 
-	err := fs.MkdirAll(hiddenDir, 0o775)
+	err := fs.MkdirAll(hiddenDir, 0775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	err = fs.MkdirAll(filepath.Join(hiddenDir, hiddenFile), 0o775)
+	err = fs.MkdirAll(filepath.Join(hiddenDir, hiddenFile), 0775)
 	require.ErrorIs(err, os.ErrPermission)
 
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), 0o775)
-	internal.MkdirAll(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), 0o775)
+	testutils.MkdirAll(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), 0775)
+	testutils.MkdirAll(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), 0775)
 
 	// at the end the hidden directory should containthe same number of files as before
-	internal.CountFiles(t, base, hiddenDir, 2)
-	internal.CountFiles(t, fs, hiddenDirParent, 6)
+	testutils.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 6)
 }
 
 func TestHiddenFsOpenFile(t *testing.T) {
@@ -135,22 +135,22 @@ func TestHiddenFsOpenFile(t *testing.T) {
 	hiddenDirParent, hiddenDir, hiddenFile, base, fs := SetupMemMapHiddenFsTest(t)
 
 	// try doing stuff in the hidden directory
-	internal.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
-	internal.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
-	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0o775)
+	testutils.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
+	testutils.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
+	testutils.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0775)
 
-	_, err := fs.OpenFile(hiddenDir, os.O_RDONLY, 0o755)
+	_, err := fs.OpenFile(hiddenDir, os.O_RDONLY, 0755)
 	require.ErrorIs(err, os.ErrNotExist)
 
-	_, err = fs.OpenFile(filepath.Join(hiddenDir, hiddenFile), os.O_RDONLY, 0o755)
+	_, err = fs.OpenFile(filepath.Join(hiddenDir, hiddenFile), os.O_RDONLY, 0755)
 	require.ErrorIs(err, os.ErrNotExist)
 
 	_, err = fs.Create(filepath.Join(hiddenDir, hiddenFile))
 	require.ErrorIs(err, os.ErrPermission)
 
 	// at the end the hidden directory should containthe same number of files as before
-	internal.CountFiles(t, base, hiddenDir, 2)
-	internal.CountFiles(t, fs, hiddenDirParent, 6)
+	testutils.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 6)
 }
 
 func TestHiddenFsRemove(t *testing.T) {
@@ -166,8 +166,8 @@ func TestHiddenFsRemove(t *testing.T) {
 	require.ErrorIs(err, os.ErrNotExist)
 
 	// at the end the hidden directory should containthe same number of files as before
-	internal.CountFiles(t, base, hiddenDir, 2)
-	internal.CountFiles(t, fs, hiddenDirParent, 1)
+	testutils.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 1)
 }
 
 func TestHiddenFsRemoveAll(t *testing.T) {
@@ -175,16 +175,16 @@ func TestHiddenFsRemoveAll(t *testing.T) {
 
 	hiddenDirParent, hiddenDir, _, base, fs := SetupMemMapHiddenFsTest(t)
 
-	internal.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
-	internal.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
-	internal.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0o775)
+	testutils.CreateFile(t, fs, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
+	testutils.CreateFile(t, fs, filepath.Join(hiddenDir+"_random_suffix", "should_be_created"), "text")
+	testutils.OpenFile(t, fs, filepath.Join(hiddenDirParent, "does_not_exist_yet"), "test", 0775)
 
 	err := fs.RemoveAll(hiddenDirParent)
 	require.NoError(err)
 
 	// at the end the hidden directory should containthe same number of files as before
-	internal.CountFiles(t, base, hiddenDir, 2)
-	internal.CountFiles(t, fs, hiddenDirParent, 1)
+	testutils.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 1)
 }
 
 func TestHiddenFsSymlink(t *testing.T) {
@@ -199,7 +199,7 @@ func TestHiddenFsSymlink(t *testing.T) {
 		hiddenNewpath = filepath.Join(hiddenDir, "newpath")
 	)
 
-	internal.CreateFile(t, fs, oldpath, "text")
+	testutils.CreateFile(t, fs, oldpath, "text")
 
 	// cannot create symlink i hidden dir
 	err := fs.Symlink(oldpath, hiddenDir)
@@ -224,6 +224,6 @@ func TestHiddenFsSymlink(t *testing.T) {
 	require.NoError(err)
 
 	// at the end the hidden directory should containthe same number of files as before
-	internal.CountFiles(t, base, hiddenDir, 2)
-	internal.CountFiles(t, fs, hiddenDirParent, 4)
+	testutils.CountFiles(t, base, hiddenDir, 2)
+	testutils.CountFiles(t, fs, hiddenDirParent, 4)
 }

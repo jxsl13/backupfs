@@ -2,7 +2,7 @@
 # BackupFs
 
 Multiple filesystem abstraction layers working together to create a straight forward rollback mechanism for filesystem modifications with OS-independent file paths.
-This package provides multiple filesystem abstractions which implement the spf13/afero.Fs interface as well as the optional interfaces.
+This package provides multiple filesystem abstractions which implement the spf13/afero.Fs interface as well as the optional fsi.
 
 They require the filesystem modifications to happen via the provided structs of this package.
 
@@ -129,7 +129,7 @@ import (
 	"os"
 
 	"github.com/jxsl13/backupfs"
-	"github.com/jxsl13/backupfs/mem"
+	"github.com/jxsl13/backupfs/internal/mem"
 )
 
 func checkErr(err error) {

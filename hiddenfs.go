@@ -9,14 +9,14 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jxsl13/backupfs/fsi"
 	"github.com/jxsl13/backupfs/fsutils"
-	"github.com/jxsl13/backupfs/interfaces"
 	"github.com/jxsl13/backupfs/internal"
 )
 
 var (
 	// assert interfaces implemented
-	_ interfaces.Fs = (*HiddenFs)(nil)
+	_ fsi.Fs = (*HiddenFs)(nil)
 
 	ErrHiddenNotExist        = fmt.Errorf("hidden: %w", os.ErrNotExist)
 	ErrHiddenPermission      = fmt.Errorf("hidden: %w", os.ErrPermission)
@@ -29,7 +29,7 @@ var (
 )
 
 // NewHiddenFs hides away anthing beneath the specified paths.
-func NewHiddenFs(base interfaces.Fs, hiddenPaths ...string) *HiddenFs {
+func NewHiddenFs(base fsi.Fs, hiddenPaths ...string) *HiddenFs {
 	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 
 	for _, p := range hiddenPaths {
@@ -55,7 +55,7 @@ func NewHiddenFs(base interfaces.Fs, hiddenPaths ...string) *HiddenFs {
 // Writing to the hidden paths results in a os.ErrPermission error
 // Reading/Stat/Lstat from the directories or files results in os.ErrNotExist errors
 type HiddenFs struct {
-	base        interfaces.Fs
+	base        fsi.Fs
 	hiddenPaths []string
 }
 
@@ -69,7 +69,7 @@ func (fs *HiddenFs) isParentOfHidden(name string) (bool, error) {
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (s *HiddenFs) Create(name string) (interfaces.File, error) {
+func (s *HiddenFs) Create(name string) (fsi.File, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -113,12 +113,12 @@ func (s *HiddenFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (s *HiddenFs) Open(name string) (interfaces.File, error) {
+func (s *HiddenFs) Open(name string) (fsi.File, error) {
 	return s.OpenFile(name, os.O_RDONLY, 0)
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (s *HiddenFs) OpenFile(name string, flag int, perm os.FileMode) (interfaces.File, error) {
+func (s *HiddenFs) OpenFile(name string, flag int, perm os.FileMode) (fsi.File, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: name, Err: wrapErrHiddenCheckFailed(err)}

@@ -1,11 +1,9 @@
 package internal
 
-import (
-	"os"
-)
+import "io/fs"
 
 // EqualMode is os-Dependent
-func EqualMode(a, b os.FileMode) bool {
+func EqualMode(a, b fs.FileMode) bool {
 	//
 	a &= ChmodBits
 	b &= ChmodBits

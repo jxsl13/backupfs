@@ -3,7 +3,7 @@ package backupfs
 import (
 	"testing"
 
-	"github.com/jxsl13/backupfs/internal"
+	"github.com/jxsl13/backupfs/internal/testutils"
 )
 
 func FuzzHiddenFsCreate(f *testing.F) {
@@ -18,11 +18,11 @@ func FuzzHiddenFsCreate(f *testing.F) {
 		// should not be able to create a file in that directory
 
 		fs.Create(filePath)
-		fs.MkdirAll(filePath, 0o755)
+		fs.MkdirAll(filePath, 0755)
 		fs.RemoveAll(filePath)
 
 		// anything in the hidden directory must stay as is
-		internal.CountFiles(t, base, hiddenDir, 2)
+		testutils.CountFiles(t, base, hiddenDir, 2)
 	})
 }
 
@@ -40,6 +40,6 @@ func FuzzHiddenFsRemoveAll(f *testing.F) {
 		fs.RemoveAll(filePath)
 
 		// anything in the hidden directory must stay as is
-		internal.CountFiles(t, base, hiddenDir, 2)
+		testutils.CountFiles(t, base, hiddenDir, 2)
 	})
 }

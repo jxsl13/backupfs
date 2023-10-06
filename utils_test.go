@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 )
 
-func tempDir(ifs interfaces.Fs, dir, prefix string) (name string, err error) {
+func tempDir(ifs fsi.Fs, dir, prefix string) (name string, err error) {
 	if dir == "" {
 		dir = os.TempDir()
 	}
@@ -21,7 +21,7 @@ func tempDir(ifs interfaces.Fs, dir, prefix string) (name string, err error) {
 	const maxIterations = 1 << 14
 	for i := 0; i < maxIterations; i++ {
 		try := filepath.Join(dir, prefix+nextRandom())
-		err = ifs.Mkdir(try, 0o700)
+		err = ifs.Mkdir(try, 0700)
 		if errors.Is(err, fs.ErrNotExist) {
 			if nconflict++; nconflict > 10 {
 				randmu.Lock()

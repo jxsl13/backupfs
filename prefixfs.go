@@ -9,18 +9,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/fsi"
 )
 
 // assert interfaces implemented
 var (
-	_ interfaces.Fs = (*PrefixFs)(nil)
+	_ fsi.Fs = (*PrefixFs)(nil)
 )
 
 // NewPrefixFs creates a new file system abstraction that forces any path to be prepended with
 // the provided prefix.
 // the existence of the prefixPath existing is hidden away (errors might show full paths).
-func NewPrefixFs(prefixPath string, fs interfaces.Fs) *PrefixFs {
+func NewPrefixFs(prefixPath string, fs fsi.Fs) *PrefixFs {
 	return &PrefixFs{
 		prefix: filepath.Clean(prefixPath),
 		base:   fs,
@@ -31,7 +31,7 @@ func NewPrefixFs(prefixPath string, fs interfaces.Fs) *PrefixFs {
 // The prefixed path is seen as the root directory.
 type PrefixFs struct {
 	prefix string
-	base   interfaces.Fs
+	base   fsi.Fs
 }
 
 func (s *PrefixFs) prefixPath(name string) (string, error) {
@@ -56,7 +56,7 @@ func (s *PrefixFs) prefixPath(name string) (string, error) {
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (s *PrefixFs) Create(name string) (interfaces.File, error) {
+func (s *PrefixFs) Create(name string) (fsi.File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func (s *PrefixFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (s *PrefixFs) Open(name string) (interfaces.File, error) {
+func (s *PrefixFs) Open(name string) (fsi.File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (s *PrefixFs) Open(name string) (interfaces.File, error) {
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (s *PrefixFs) OpenFile(name string, flag int, perm os.FileMode) (interfaces.File, error) {
+func (s *PrefixFs) OpenFile(name string, flag int, perm os.FileMode) (fsi.File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err

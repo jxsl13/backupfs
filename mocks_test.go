@@ -8,15 +8,15 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/jxsl13/backupfs/fsi"
 	"github.com/jxsl13/backupfs/fsutils"
-	"github.com/jxsl13/backupfs/interfaces"
+	"github.com/jxsl13/backupfs/internal/mem"
 	"github.com/jxsl13/backupfs/internal/testutils"
-	"github.com/jxsl13/backupfs/mem"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
-func NewTestMockBackupFs(mockedBase interfaces.Fs) (backupLayer, backupFs interfaces.Fs) {
+func NewTestMockBackupFs(mockedBase fsi.Fs) (backupLayer, backupFs fsi.Fs) {
 	m := mem.NewMemMapFs()
 	backup := NewPrefixFs("/backup", m)
 	return backup, NewBackupFs(mockedBase, backup)
@@ -72,17 +72,17 @@ func TestMockFsMkdir(t *testing.T) {
 	}{
 		{
 			filepath.Clean("/test"),
-			testutils.CreateMemDir("/test", 0o755),
+			testutils.CreateMemDir("/test", 0755),
 			nil,
 		},
 		{
 			filepath.Clean("/test/01"),
-			testutils.CreateMemDir("/test/01", 0o755),
+			testutils.CreateMemDir("/test/01", 0755),
 			nil,
 		},
 		{
 			filepath.Clean("/test/01/mock"),
-			testutils.CreateMemDir("/test/01/mock", 0o755),
+			testutils.CreateMemDir("/test/01/mock", 0755),
 			syscall.ENOENT,
 		},
 	}
@@ -104,7 +104,7 @@ func TestMockFsMkdir(t *testing.T) {
 	backup, fs := NewTestMockBackupFs(mf)
 
 	for _, d := range dirs {
-		err := fs.MkdirAll(d.Path, 0o755)
+		err := fs.MkdirAll(d.Path, 0755)
 		require.Truef(errors.Is(err, d.Error), "expected error %v, got error %v", d.Error, err)
 		if err != nil {
 			testutils.MustNotExist(t, backup, d.Path)
