@@ -651,7 +651,6 @@ func TestBackupFS_Chmod(t *testing.T) {
 		backupPrefix = "/backup"
 	)
 
-	// Afero.MemmapFs does not seem to properly implement chmod stuff.
 	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
 
 	var (
@@ -700,10 +699,10 @@ func NewTempDirPrefixFS(rootDir string) *PrefixFS {
 	}
 
 	volume := filepath.VolumeName(tempDir)
-	volumeFs := NewVolumeFs(volume, osFS)
+	volumeFS := NewVolumeFS(volume, osFS)
 	tempDir = TrimVolume(tempDir)
 
-	return NewPrefixFS(tempDir, volumeFs)
+	return NewPrefixFS(tempDir, volumeFS)
 }
 
 func NewTestBackupFS(basePrefix, backupPrefix string) (root, base, backup FS, backupFS *BackupFS) {

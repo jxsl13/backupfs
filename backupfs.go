@@ -83,8 +83,8 @@ type BackupFS struct {
 	windowsVolumePaths bool
 }
 
-// GetBaseFs returns the fs layer that is being written to
-func (fsys *BackupFS) GetBaseFs() FS {
+// GetBaseFS returns the fs layer that is being written to
+func (fsys *BackupFS) GetBaseFS() FS {
 	return fsys.base
 }
 
@@ -345,7 +345,7 @@ func (fsys *BackupFS) setBaseInfoIfNotFound(path string, info fs.FileInfo) {
 }
 
 // alreadyFoundBaseInfo returns true when we already visited this path.
-// This is a helper function in order to NOT call the Stat method of the baseFs
+// This is a helper function in order to NOT call the Stat method of the baseFS
 // an unnecessary amount of times for filepath sub directories when we can just lookup
 // the information in out internal filepath map
 func (fsys *BackupFS) alreadyFoundBaseInfo(path string) bool {
@@ -378,7 +378,7 @@ func (fsys *BackupFS) stat(name string) (fs.FileInfo, error) {
 		}
 
 		// only in case that we have not yet visited one of the subdirs already,
-		// only then fetch the file information from the underlying baseFs
+		// only then fetch the file information from the underlying baseFS
 		// we do want to ignore errors as this is only for keeping track of subdirectories
 		// TODO: in some weird scenario it might be possible for this value to be a symlink
 		// instead of a directory
@@ -393,7 +393,7 @@ func (fsys *BackupFS) stat(name string) (fs.FileInfo, error) {
 	return fsys.trackedStat(name)
 }
 
-// trackedStat is the tracked variant of Stat that is called on the underlying base Fs
+// trackedStat is the tracked variant of Stat that is called on the underlying base FS
 func (fsys *BackupFS) trackedStat(name string) (fs.FileInfo, error) {
 	fi, err := fsys.base.Stat(name)
 

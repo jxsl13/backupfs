@@ -9,7 +9,7 @@ var _ File = (*PrefixFile)(nil)
 
 type PrefixFile struct {
 	f File
-	// this prefix is clean due to th eFs prefix being clean
+	// this prefix is clean due to th eFS prefix being clean
 	prefix string
 }
 

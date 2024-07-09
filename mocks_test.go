@@ -27,7 +27,7 @@ func NewTestMockBackupFS(mockedBase FS) (backupLayer, BackupFS FS) {
 	backup := NewPrefixFS(backupDir, root)
 	return backup, NewBackupFS(mockedBase, backup)
 }
-func TestMockFsLstat(t *testing.T) {
+func TestMockFSLstat(t *testing.T) {
 	require := require.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -105,7 +105,7 @@ func (fi *fileInfo) Sys() any {
 	return nil
 }
 
-func TestMockFsMkdir(t *testing.T) {
+func TestMockFSMkdir(t *testing.T) {
 	require := require.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()

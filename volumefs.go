@@ -11,22 +11,22 @@ import (
 
 // assert interfaces implemented
 var (
-	_ FS = (*VolumeFs)(nil)
+	_ FS = (*VolumeFS)(nil)
 )
 
 type volumeFile = PrefixFile
 type volumeFileInfo = prefixFileInfo
 
-// VolumeFs is specifically designed to prefix absolute paths with a defined volume like C:, D:, E: etc.
+// VolumeFS is specifically designed to prefix absolute paths with a defined volume like C:, D:, E: etc.
 // We want to be able to decide which volume to target on Windows operating systems.
-type VolumeFs struct {
+type VolumeFS struct {
 	volume string
 	base   FS
 }
 
 // the passed file path must not contain any os specific volume prefix.
 // primarily no windows volumes like c:, d:, etc.
-func (v *VolumeFs) prefixPath(name string) (string, error) {
+func (v *VolumeFS) prefixPath(name string) (string, error) {
 	name = filepath.Clean(name)
 
 	if v.volume == "" {
@@ -41,8 +41,8 @@ func (v *VolumeFs) prefixPath(name string) (string, error) {
 	return filepath.Clean(filepath.Join(v.volume, name)), nil
 }
 
-func NewVolumeFs(volume string, fs FS) *VolumeFs {
-	return &VolumeFs{
+func NewVolumeFS(volume string, fs FS) *VolumeFS {
+	return &VolumeFS{
 		volume: filepath.VolumeName(volume), // this part behaves differently depending on the operating system
 		base:   fs,
 	}
@@ -50,7 +50,7 @@ func NewVolumeFs(volume string, fs FS) *VolumeFs {
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (v *VolumeFs) Create(name string) (File, error) {
+func (v *VolumeFS) Create(name string) (File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (v *VolumeFs) Create(name string) (File, error) {
 
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
-func (v *VolumeFs) Mkdir(name string, perm fs.FileMode) error {
+func (v *VolumeFS) Mkdir(name string, perm fs.FileMode) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func (v *VolumeFs) Mkdir(name string, perm fs.FileMode) error {
 
 // MkdirAll creates a directory path and all parents that does not exist
 // yet.
-func (v *VolumeFs) MkdirAll(name string, perm fs.FileMode) error {
+func (v *VolumeFS) MkdirAll(name string, perm fs.FileMode) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err
@@ -88,7 +88,7 @@ func (v *VolumeFs) MkdirAll(name string, perm fs.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (v *VolumeFs) Open(name string) (File, error) {
+func (v *VolumeFS) Open(name string) (File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (v *VolumeFs) Open(name string) (File, error) {
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (v *VolumeFs) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
+func (v *VolumeFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (v *VolumeFs) OpenFile(name string, flag int, perm fs.FileMode) (File, erro
 
 // Remove removes a file identified by name, returning an error, if any
 // happens.
-func (v *VolumeFs) Remove(name string) error {
+func (v *VolumeFS) Remove(name string) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err
@@ -130,7 +130,7 @@ func (v *VolumeFs) Remove(name string) error {
 
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
-func (v *VolumeFs) RemoveAll(name string) error {
+func (v *VolumeFS) RemoveAll(name string) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err
@@ -140,7 +140,7 @@ func (v *VolumeFs) RemoveAll(name string) error {
 }
 
 // Rename renames a file.
-func (v *VolumeFs) Rename(oldname, newname string) error {
+func (v *VolumeFS) Rename(oldname, newname string) error {
 	oldpath, err := v.prefixPath(oldname)
 	if err != nil {
 		return err
@@ -155,7 +155,7 @@ func (v *VolumeFs) Rename(oldname, newname string) error {
 
 // Stat returns a FileInfo describing the named file, or an error, if any
 // happens.
-func (v *VolumeFs) Stat(name string) (fs.FileInfo, error) {
+func (v *VolumeFS) Stat(name string) (fs.FileInfo, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -170,12 +170,12 @@ func (v *VolumeFs) Stat(name string) (fs.FileInfo, error) {
 }
 
 // The name of this FileSystem
-func (v *VolumeFs) Name() string {
-	return "VolumeFs"
+func (v *VolumeFS) Name() string {
+	return "VolumeFS"
 }
 
 // Chmod changes the mode of the named file to mode.
-func (v *VolumeFs) Chmod(name string, mode fs.FileMode) error {
+func (v *VolumeFS) Chmod(name string, mode fs.FileMode) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err
@@ -185,7 +185,7 @@ func (v *VolumeFs) Chmod(name string, mode fs.FileMode) error {
 }
 
 // Chown changes the uid and gid of the named file.
-func (v *VolumeFs) Chown(name string, uid, gid int) error {
+func (v *VolumeFS) Chown(name string, uid, gid int) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err
@@ -195,7 +195,7 @@ func (v *VolumeFs) Chown(name string, uid, gid int) error {
 }
 
 // Chtimes changes the access and modification times of the named file
-func (v *VolumeFs) Chtimes(name string, atime, mtime time.Time) error {
+func (v *VolumeFS) Chtimes(name string, atime, mtime time.Time) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err
@@ -206,7 +206,7 @@ func (v *VolumeFs) Chtimes(name string, atime, mtime time.Time) error {
 // Lstat will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
 // Else it will call Stat.
 // In addtion to the FileInfo, it will return a boolean telling whether Lstat was called or not.
-func (v *VolumeFs) Lstat(name string) (fs.FileInfo, error) {
+func (v *VolumeFS) Lstat(name string) (fs.FileInfo, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -221,7 +221,7 @@ func (v *VolumeFs) Lstat(name string) (fs.FileInfo, error) {
 }
 
 // Symlink changes the access and modification times of the named file
-func (v *VolumeFs) Symlink(oldname, newname string) error {
+func (v *VolumeFS) Symlink(oldname, newname string) error {
 	// links may be relative paths
 
 	var (
@@ -248,7 +248,7 @@ func (v *VolumeFs) Symlink(oldname, newname string) error {
 	return v.base.Symlink(oldPath, newPath)
 }
 
-func (v *VolumeFs) Readlink(name string) (string, error) {
+func (v *VolumeFS) Readlink(name string) (string, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return "", err
@@ -263,7 +263,7 @@ func (v *VolumeFs) Readlink(name string) (string, error) {
 	return strings.TrimPrefix(cleanedPath, v.volume), nil
 }
 
-func (v *VolumeFs) Lchown(name string, uid, gid int) error {
+func (v *VolumeFS) Lchown(name string, uid, gid int) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
 		return err

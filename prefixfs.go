@@ -25,7 +25,7 @@ func NewPrefixFS(prefixPath string, fs FS) *PrefixFS {
 	}
 }
 
-// PrefixFS, contrary to BasePathFs, does abstract away the existence of a base path.
+// PrefixFS, contrary to BasePathFS, does abstract away the existence of a base path.
 // The prefixed path is seen as the root directory.
 type PrefixFS struct {
 	prefix string

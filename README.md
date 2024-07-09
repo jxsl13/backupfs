@@ -1,7 +1,7 @@
 # BackupFS
 
 Multiple filesystem abstraction layers working together to create a straight forward rollback mechanism for filesystem modifications with OS-independent file paths.
-This package provides multiple filesystem abstractions which implement the spf13/afero.Fs interface as well as the optional interfaces.
+This package provides multiple filesystem abstractions which implement the spf13/afero.FS interface as well as the optional interfaces.
 
 They require the filesystem modifications to happen via the provided structs of this package.
 
@@ -48,9 +48,9 @@ are to be strictly separated from **side effects causing commands**
 
 then you will have a much easier time!
 
-## VolumeFs
+## VolumeFS
 
-`VolumeFs` is a filesystem abstraction layer that hides Windows volumes from file system operations.
+`VolumeFS` is a filesystem abstraction layer that hides Windows volumes from file system operations.
 It allows to define a volume of operation like `c:` or `C:` which is then the only volume that can be accessed.
 This abstraction layer allows to operate on filesystems with operating system independent paths.
 
@@ -72,11 +72,11 @@ Consecutive file modifications are ignored, as the initial file state has alread
 ## HiddenFS
 
 HiddenFS has a single purpose, that is to hide your backup location and prevent your application from seeing or modifying it.
-In case you use BackupFS to backup files that are overwritten on your operating system filesystem (OsFs), you want to define multiple filesystem layers that work together to prevent you from creating a non-terminating recursion of file backups.
+In case you use BackupFS to backup files that are overwritten on your operating system filesystem (OsFS), you want to define multiple filesystem layers that work together to prevent you from creating a non-terminating recursion of file backups.
 
-- The zero'th layer is the underlying real filesystem, be it the OsFs, MemMapFs, etc.
-- The first layer is a VolumeFs filesystem abstraction that removes the need to provide a volume prefix for absolute file paths when accessing files on the underlying filesystem (Windows)
-- The second layer is a PrefixFS that is provided a prefix path (backup directory location) and the above instantiated filesystem (e.g. OsFs)
+- The zero'th layer is the underlying real filesystem, be it the OsFS, MemMapFS, etc.
+- The first layer is a VolumeFS filesystem abstraction that removes the need to provide a volume prefix for absolute file paths when accessing files on the underlying filesystem (Windows)
+- The second layer is a PrefixFS that is provided a prefix path (backup directory location) and the above instantiated filesystem (e.g. OsFS)
 - The third layer is HiddenFS which takes the backup location as path that needs hiding and wraps the first layer in itself.
 - The fourth layer is the BackupFS layer which takes the third layer as underlying filesystem to operate on (backup location is not accessible nor viewable) and the second PrefixFS layer to backup your files to.
 
@@ -98,7 +98,7 @@ func main() {
 	var (
 		// first layer: abstracts away the volume prefix (on Unix the it is an empty string)
 		volume     = filepath.VolumeName(os.Args[0]) // determined from application path
-		base       = BackupFS.NewVolumeFs(volume, afero.NewMemMapFs())
+		base       = BackupFS.NewVolumeFS(volume, afero.NewMemMapFS())
 		backupPath = "/var/opt/app/backups"
 
 		// second layer: abstracts away a path prefix
@@ -147,12 +147,12 @@ func main() {
 
 	var (
 		// base filesystem
-		baseFs   = afero.NewMemMapFs()
+		baseFS   = afero.NewMemMapFS()
 		filePath = "/var/opt/test.txt"
 	)
 
 	// create an already existing file in base filesystem
-	f, err := baseFs.Create(filePath)
+	f, err := baseFS.Create(filePath)
 	checkErr(err)
 
 	f.WriteString("original text")
@@ -162,10 +162,10 @@ func main() {
 	var (
 		// sub directory in base filesystem as backup directory
 		// where the backups should be stored
-		backup = BackupFS.NewPrefixFS("/var/opt/application/backup", baseFs)
+		backup = BackupFS.NewPrefixFS("/var/opt/application/backup", baseFS)
 
 		// backup on write filesystem
-		BackupFS = BackupFS.NewBackupFS(baseFs, backup)
+		BackupFS = BackupFS.NewBackupFS(baseFS, backup)
 	)
 
 	// we try to override a file in the base filesystem
@@ -188,7 +188,7 @@ func main() {
 
 	backedupContent := string(b)
 
-	f, err = baseFs.Open(filePath)
+	f, err = baseFS.Open(filePath)
 	checkErr(err)
 	b, err = io.ReadAll(f)
 	checkErr(err)
@@ -198,7 +198,7 @@ func main() {
 	fmt.Println("Overwritten file: ", overwrittenFileContent)
 	fmt.Println("Backed up file  : ", backedupContent)
 
-	afs := afero.Afero{Fs: BackupFS}
+	afs := afero.Afero{FS: BackupFS}
 	fi, err := afs.ReadDir("/var/opt/")
 	checkErr(err)
 
