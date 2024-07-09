@@ -11,7 +11,7 @@ import (
 // reference: os package
 var chmodBits fs.FileMode = fs.ModePerm | fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky
 
-func Uid(from fs.FileInfo) int {
+func toUID(from fs.FileInfo) int {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		return int(stat.Uid)
 	}
@@ -19,7 +19,7 @@ func Uid(from fs.FileInfo) int {
 	return -1
 }
 
-func Gid(from fs.FileInfo) int {
+func toGID(from fs.FileInfo) int {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		return int(stat.Gid)
 	}
