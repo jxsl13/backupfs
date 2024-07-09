@@ -24,7 +24,7 @@ func NewTestMockBackupFS(mockedBase FS) (backupLayer, BackupFS FS) {
 	if err != nil {
 		panic(err)
 	}
-	backup := NewPrefixFS(backupDir, root)
+	backup := NewPrefixFS(root, backupDir)
 	return backup, NewBackupFS(mockedBase, backup)
 }
 func TestMockFSLstat(t *testing.T) {

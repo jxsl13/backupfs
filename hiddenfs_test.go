@@ -21,7 +21,7 @@ func newTestTempDirHiddenFS(caller int, hiddenPaths ...string) (base FS, hfs *Hi
 	if err != nil {
 		panic(err)
 	}
-	base = NewPrefixFS(hidden, root)
+	base = NewPrefixFS(root, hidden)
 	return base, NewHiddenFS(base, hiddenPaths...)
 }
 

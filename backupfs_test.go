@@ -702,7 +702,7 @@ func NewTempDirPrefixFS(rootDir string) *PrefixFS {
 	volumeFS := NewVolumeFS(volume, osFS)
 	tempDir = TrimVolume(tempDir)
 
-	return NewPrefixFS(tempDir, volumeFS)
+	return NewPrefixFS(volumeFS, tempDir)
 }
 
 func NewTestBackupFS(basePrefix, backupPrefix string) (root, base, backup FS, backupFS *BackupFS) {
@@ -714,14 +714,14 @@ func NewTestBackupFS(basePrefix, backupPrefix string) (root, base, backup FS, ba
 		panic(err)
 	}
 
-	base = NewPrefixFS(basePrefix, root)
+	base = NewPrefixFS(root, basePrefix)
 
 	err = root.MkdirAll(backupPrefix, 0700)
 	if err != nil {
 		panic(err)
 	}
 
-	backup = NewPrefixFS(backupPrefix, root)
+	backup = NewPrefixFS(root, backupPrefix)
 	backupFS = NewBackupFS(base, backup)
 	return root, base, backup, backupFS
 }

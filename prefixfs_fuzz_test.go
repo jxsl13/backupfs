@@ -19,7 +19,7 @@ func FuzzPrefixFS(f *testing.F) {
 		rootPath = CallerPathTmp()
 		rootFS   = NewTempDirPrefixFS(rootPath)
 		prefix   = filepath.FromSlash("/some/test/prefix/01/test/02")
-		fsys     = NewPrefixFS(prefix, rootFS)
+		fsys     = NewPrefixFS(rootFS, prefix)
 		fileName = "prefixfs_test.txt"
 	)
 	for _, seed := range []string{".", "/", "..", "\\", fileName} {

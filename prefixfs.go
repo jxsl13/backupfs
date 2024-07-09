@@ -18,7 +18,8 @@ var (
 // NewPrefixFS creates a new file system abstraction that forces any path to be prepended with
 // the provided prefix.
 // the existence of the prefixPath existing is hidden away (errors might show full paths).
-func NewPrefixFS(prefixPath string, fs FS) *PrefixFS {
+// The prefixPath is seen as the root directory.
+func NewPrefixFS(fs FS, prefixPath string) *PrefixFS {
 	return &PrefixFS{
 		prefix: filepath.Clean(prefixPath),
 		base:   fs,
