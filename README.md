@@ -90,7 +90,6 @@ import (
 	"path/filepath"
 
 	"github.com/jxsl13/backupfs"
-	"github.com/spf13/afero"
 )
 
 func main() {
@@ -98,23 +97,22 @@ func main() {
 	var (
 		// first layer: abstracts away the volume prefix (on Unix the it is an empty string)
 		volume     = filepath.VolumeName(os.Args[0]) // determined from application path
-		base       = BackupFS.NewVolumeFS(volume, afero.NewMemMapFS())
+		base       = backupfs.NewVolumeFS(volume, backupfs.NewOSFS())
 		backupPath = "/var/opt/app/backups"
 
 		// second layer: abstracts away a path prefix
-		backup = BackupFS.NewPrefixFS(backupPath, base)
+		backup = backupfs.NewPrefixFS(base, backupPath)
 
 		// third layer: hides the backup location in order to prevent recursion
-		masked = BackupFS.NewHiddenFS(backupPath, base)
+		masked = backupfs.NewHiddenFS(base, backupPath)
 
 		// fourth layer: backup on write filesystem with rollback
-		BackupFS = BackupFS.NewBackupFS(masked, backup)
+		backupFS = backupfs.NewBackupFS(masked, backup)
 	)
-	// you may use BackupFS at this point like the os package
-	// except for the BackupFS.Rollback() machanism which
+	// you may use backupFS at this point like the os package
+	// except for the backupFS.Rollback() machanism which
 	// allows you to rollback filesystem modifications.
 }
-
 ```
 
 ## Example
@@ -133,7 +131,6 @@ import (
 	"os"
 
 	"github.com/jxsl13/backupfs"
-	"github.com/spf13/afero"
 )
 
 func checkErr(err error) {
@@ -147,10 +144,9 @@ func main() {
 
 	var (
 		// base filesystem
-		baseFS   = afero.NewMemMapFS()
+		baseFS   = backupfs.NewPrefixFS(backupfs.NewOSFS(), os.TempDir())
 		filePath = "/var/opt/test.txt"
 	)
-
 	// create an already existing file in base filesystem
 	f, err := baseFS.Create(filePath)
 	checkErr(err)
@@ -158,18 +154,20 @@ func main() {
 	f.WriteString("original text")
 	f.Close()
 
-	// at this point we have the base filesystem ready to be ovwerwritten with new files
+	// at this point we have the base filesystem ready to be overwritten with new files
 	var (
 		// sub directory in base filesystem as backup directory
 		// where the backups should be stored
-		backup = BackupFS.NewPrefixFS("/var/opt/application/backup", baseFS)
+		backup = backupfs.NewPrefixFS(baseFS, "/var/opt/application/backup")
 
 		// backup on write filesystem
-		BackupFS = BackupFS.NewBackupFS(baseFS, backup)
+		backupFS = backupfs.NewBackupFS(baseFS, backup)
 	)
 
 	// we try to override a file in the base filesystem
-	f, err = BackupFS.Create(filePath)
+	// but in this case we use the backup on write filesystem
+	// on top of the base filesystem.
+	f, err = backupFS.Create(filePath)
 	checkErr(err)
 	f.WriteString("new file content")
 	f.Close()
@@ -184,7 +182,7 @@ func main() {
 
 	b, err := io.ReadAll(f)
 	checkErr(err)
-	f.Close()
+	_ = f.Close()
 
 	backedupContent := string(b)
 
@@ -198,14 +196,15 @@ func main() {
 	fmt.Println("Overwritten file: ", overwrittenFileContent)
 	fmt.Println("Backed up file  : ", backedupContent)
 
-	afs := afero.Afero{FS: BackupFS}
-	fi, err := afs.ReadDir("/var/opt/")
+	dir, err := backupFS.Open("/var/opt/")
 	checkErr(err)
+	defer dir.Close()
 
-	for _, f := range fi {
-		fmt.Println("Found name: ", f.Name())
+	fis, err := dir.Readdir(-1)
+	checkErr(err)
+	for _, fi := range fis {
+		fmt.Println("Found name: ", fi.Name())
 	}
-
 }
 ```
 
