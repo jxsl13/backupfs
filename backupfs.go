@@ -252,8 +252,8 @@ func toFInfo(path string, fi fs.FileInfo) *fInfo {
 		FileMode:    uint32(fi.Mode()),
 		FileModTime: fi.ModTime().UnixNano(),
 		FileSize:    fi.Size(),
-		FileUid:     Uid(fi),
-		FileGid:     Gid(fi),
+		FileUid:     toUID(fi),
+		FileGid:     toGID(fi),
 	}
 }
 

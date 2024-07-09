@@ -217,7 +217,7 @@ func copySymlink(source, target FS, name string, info fs.FileInfo) error {
 		return err
 	}
 
-	return ignoreChownError(target.Lchown(name, Uid(info), Gid(info)))
+	return ignoreChownError(target.Lchown(name, toUID(info), toGID(info)))
 }
 
 // Chown is an operating system dependent implementation.
@@ -229,15 +229,15 @@ func chown(from fs.FileInfo, toName string, fs FS) error {
 		return fmt.Errorf("lstat for chown failed: %w", err)
 	}
 
-	oldUid := Uid(oldOwnerFi)
-	oldGid := Gid(oldOwnerFi)
+	oldUid := toUID(oldOwnerFi)
+	oldGid := toGID(oldOwnerFi)
 
-	newUid := Uid(from)
-	newGid := Gid(from)
+	newUid := toUID(from)
+	newGid := toGID(from)
 
 	// only update when something changed
 	if oldUid != newUid || oldGid != newGid {
-		err = fs.Chown(toName, Uid(from), Gid(from))
+		err = fs.Chown(toName, toUID(from), toGID(from))
 		if err != nil {
 			return err
 		}
