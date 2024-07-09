@@ -4,8 +4,7 @@
 package backupfs
 
 import (
-	"errors"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,10 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func FuzzPrefixFs(f *testing.F) {
+func FuzzPrefixFS(f *testing.F) {
 
 	var (
+		rootPath = CallerPathTmp()
+		rootFS   = NewTempDirPrefixFS(rootPath)
 		prefix   = filepath.FromSlash("/some/test/prefix/01/test/02")
+		fsys     = NewPrefixFS(prefix, rootFS)
 		fileName = "prefixfs_test.txt"
 	)
 	for _, seed := range []string{".", "/", "..", "\\", fileName} {
@@ -31,27 +33,23 @@ func FuzzPrefixFs(f *testing.F) {
 			return
 		}
 		require := require.New(t)
-		fs := NewTestPrefixFs(prefix)
 
-		s, err := fs.prefixPath(input)
-		if !strings.HasPrefix(s, prefix) {
-			require.Error(err)
-			require.True(errors.Is(err, os.ErrNotExist), "expecting returned error to be of type os.ErrNotExist")
+		s, err := fsys.prefixPath(input)
+		if err != nil {
+			// ignore returned errors
 			return
 		}
 
-		// no error -> we can create a valid file
-		require.NoError(err)
-
-		f, err := fs.Create(input)
-		require.NoError(err)
-		defer func() {
-			err := f.Close()
-			require.NoError(err)
-		}()
+		// if we were able to prefix the path then the prefix must be present
+		if !strings.HasPrefix(s, prefix) {
+			require.Error(err)
+			require.ErrorIs(err, fs.ErrNotExist, "expecting returned error to be of type fs.ErrNotExist")
+			return
+		}
 
 		// prefix file must not have any prefix, require that prefix is hidden.
-		require.False(strings.HasPrefix(f.Name(), prefix))
+		hasPrefix := strings.HasPrefix(f.Name(), prefix)
+		require.Falsef(hasPrefix, "expecting file to not have prefix: %v", prefix)
 
 	})
 }

@@ -1,42 +1,38 @@
 package backupfs
 
 import (
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/jxsl13/backupfs/internal"
-	"github.com/spf13/afero"
 )
 
 // assert interfaces implemented
 var (
-	_ afero.Fs        = (*PrefixFs)(nil)
-	_ afero.Symlinker = (*PrefixFs)(nil)
-	_ LinkOwner       = (*PrefixFs)(nil)
+	_ FS = (*PrefixFS)(nil)
 )
 
-// NewPrefixFs creates a new file system abstraction that forces any path to be prepended with
+// NewPrefixFS creates a new file system abstraction that forces any path to be prepended with
 // the provided prefix.
 // the existence of the prefixPath existing is hidden away (errors might show full paths).
-func NewPrefixFs(prefixPath string, fs afero.Fs) *PrefixFs {
-	return &PrefixFs{
+func NewPrefixFS(prefixPath string, fs FS) *PrefixFS {
+	return &PrefixFS{
 		prefix: filepath.Clean(prefixPath),
 		base:   fs,
 	}
 }
 
-// PrefixFs, contrary to BasePathFs, does abstract away the existence of a base path.
+// PrefixFS, contrary to BasePathFs, does abstract away the existence of a base path.
 // The prefixed path is seen as the root directory.
-type PrefixFs struct {
+type PrefixFS struct {
 	prefix string
-	base   afero.Fs
+	base   FS
 }
 
-func (s *PrefixFs) prefixPath(name string) (string, error) {
+func (s *PrefixFS) prefixPath(name string) (string, error) {
 	volume := filepath.VolumeName(name)
 
 	if volume != "" {
@@ -50,20 +46,20 @@ func (s *PrefixFs) prefixPath(name string) (string, error) {
 
 	p := filepath.Join(s.prefix, filepath.Clean(name))
 	if !strings.HasPrefix(p, s.prefix) {
-		return "", os.ErrNotExist
+		return "", fs.ErrNotExist
 	}
 	return p, nil
 }
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (s *PrefixFs) Create(name string) (File, error) {
+func (s *PrefixFS) Create(name string) (File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
 	}
 	f, err := s.base.Create(path)
-	if f == nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -72,7 +68,7 @@ func (s *PrefixFs) Create(name string) (File, error) {
 
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
-func (s *PrefixFs) Mkdir(name string, perm os.FileMode) error {
+func (s *PrefixFS) Mkdir(name string, perm fs.FileMode) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
@@ -82,7 +78,7 @@ func (s *PrefixFs) Mkdir(name string, perm os.FileMode) error {
 
 // MkdirAll creates a directory path and all parents that does not exist
 // yet.
-func (s *PrefixFs) MkdirAll(name string, perm os.FileMode) error {
+func (s *PrefixFS) MkdirAll(name string, perm fs.FileMode) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
@@ -93,14 +89,14 @@ func (s *PrefixFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (s *PrefixFs) Open(name string) (File, error) {
+func (s *PrefixFS) Open(name string) (File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
 	}
 
 	f, err := s.base.Open(path)
-	if f == nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -108,14 +104,14 @@ func (s *PrefixFs) Open(name string) (File, error) {
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (s *PrefixFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+func (s *PrefixFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
 	}
 
 	f, err := s.base.OpenFile(path, flag, perm)
-	if f == nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -124,7 +120,7 @@ func (s *PrefixFs) OpenFile(name string, flag int, perm os.FileMode) (File, erro
 
 // Remove removes a file identified by name, returning an error, if any
 // happens.
-func (s *PrefixFs) Remove(name string) error {
+func (s *PrefixFS) Remove(name string) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
@@ -135,7 +131,7 @@ func (s *PrefixFs) Remove(name string) error {
 
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
-func (s *PrefixFs) RemoveAll(name string) error {
+func (s *PrefixFS) RemoveAll(name string) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
@@ -144,7 +140,7 @@ func (s *PrefixFs) RemoveAll(name string) error {
 }
 
 // Rename renames a file.
-func (s *PrefixFs) Rename(oldname, newname string) error {
+func (s *PrefixFS) Rename(oldname, newname string) error {
 	oldpath, err := s.prefixPath(oldname)
 	if err != nil {
 		return err
@@ -159,7 +155,7 @@ func (s *PrefixFs) Rename(oldname, newname string) error {
 
 // Stat returns a FileInfo describing the named file, or an error, if any
 // happens.
-func (s *PrefixFs) Stat(name string) (os.FileInfo, error) {
+func (s *PrefixFS) Stat(name string) (fs.FileInfo, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return nil, err
@@ -174,12 +170,12 @@ func (s *PrefixFs) Stat(name string) (os.FileInfo, error) {
 }
 
 // The name of this FileSystem
-func (s *PrefixFs) Name() string {
-	return "PrefixFs"
+func (s *PrefixFS) Name() string {
+	return "PrefixFS"
 }
 
 // Chmod changes the mode of the named file to mode.
-func (s *PrefixFs) Chmod(name string, mode os.FileMode) error {
+func (s *PrefixFS) Chmod(name string, mode fs.FileMode) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
@@ -189,7 +185,7 @@ func (s *PrefixFs) Chmod(name string, mode os.FileMode) error {
 }
 
 // Chown changes the uid and gid of the named file.
-func (s *PrefixFs) Chown(name string, uid, gid int) error {
+func (s *PrefixFS) Chown(name string, uid, gid int) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
@@ -199,7 +195,7 @@ func (s *PrefixFs) Chown(name string, uid, gid int) error {
 }
 
 // Chtimes changes the access and modification times of the named file
-func (s *PrefixFs) Chtimes(name string, atime, mtime time.Time) error {
+func (s *PrefixFS) Chtimes(name string, atime, mtime time.Time) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
@@ -207,32 +203,24 @@ func (s *PrefixFs) Chtimes(name string, atime, mtime time.Time) error {
 	return s.base.Chtimes(path, atime, mtime)
 }
 
-// LstatIfPossible will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
+// Lstat will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
 // Else it will call Stat.
 // In addtion to the FileInfo, it will return a boolean telling whether Lstat was called or not.
-func (s *PrefixFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
+func (s *PrefixFS) Lstat(name string) (fs.FileInfo, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	if l, ok := s.base.(afero.Lstater); ok {
-		// implements interface
-		fi, lstatCalled, err := l.LstatIfPossible(path)
-		if err != nil {
-			return nil, lstatCalled, err
-		}
-		return newPrefixFileInfo(fi, s.prefix), lstatCalled, nil
+	fi, err := s.base.Lstat(path)
+	if err != nil {
+		return nil, err
 	}
-
-	// does not implement lstat, fallback to stat
-	fi, err := s.base.Stat(path)
-	return newPrefixFileInfo(fi, s.prefix), false, err
-
+	return newPrefixFileInfo(fi, s.prefix), nil
 }
 
-// SymlinkIfPossible changes the access and modification times of the named file
-func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
+// Symlink changes the access and modification times of the named file
+func (s *PrefixFS) Symlink(oldname, newname string) error {
 	// links may be relative paths
 
 	var (
@@ -257,42 +245,30 @@ func (s *PrefixFs) SymlinkIfPossible(oldname, newname string) error {
 		return err
 	}
 
-	if l, ok := s.base.(afero.Linker); ok {
-		// implements interface
-		err := l.SymlinkIfPossible(oldPath, newPath)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: afero.ErrNoSymlink}
+	return s.base.Symlink(oldPath, newPath)
 }
 
-func (s *PrefixFs) ReadlinkIfPossible(name string) (string, error) {
+func (s *PrefixFS) Readlink(name string) (string, error) {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return "", err
 	}
 
-	if reader, ok := s.base.(afero.LinkReader); ok {
-		linkedPath, err := reader.ReadlinkIfPossible(path)
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimPrefix(linkedPath, s.prefix), nil
+	linkedPath, err := s.base.Readlink(path)
+	if err != nil {
+		return "", err
 	}
+	cleanedPath := filepath.Clean(linkedPath)
 
-	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
+	prefixlessPath := strings.TrimPrefix(cleanedPath, s.prefix)
+	return prefixlessPath, nil
 }
 
-func (s *PrefixFs) LchownIfPossible(name string, uid, gid int) error {
+func (s *PrefixFS) Lchown(name string, uid, gid int) error {
 	path, err := s.prefixPath(name)
 	if err != nil {
 		return err
 	}
 
-	if linkOwner, ok := s.base.(LinkOwner); ok {
-		return linkOwner.LchownIfPossible(path, uid, gid)
-	}
-	return &os.PathError{Op: "lchown", Path: name, Err: internal.ErrNoLchown}
+	return s.base.Lchown(path, uid, gid)
 }
