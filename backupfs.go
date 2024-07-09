@@ -920,7 +920,7 @@ func (fsys *BackupFS) lstat(name string) (fs.FileInfo, error) {
 	// in order to keep track of their state as well.
 	// /root -> /root/sub/ -> /root/sub/sub1
 	// iterate parent directories and keep track of their initial state.
-	IterateDirTree(filepath.Dir(name), func(subdirPath string) (bool, error) {
+	_, _ = IterateDirTree(filepath.Dir(name), func(subdirPath string) (bool, error) {
 		if fsys.alreadyFoundBaseInfo(subdirPath) {
 			return true, nil
 		}
@@ -928,7 +928,11 @@ func (fsys *BackupFS) lstat(name string) (fs.FileInfo, error) {
 		// only in the case that we do not know the subdirectory already
 		// we do want to track the initial state of the sub directory.
 		// if it does not exist, it should not exist
-		_, _ = fsys.trackedLstat(subdirPath)
+		_, err = fsys.trackedLstat(subdirPath)
+		if err != nil {
+			// in case of an error we want to fail fast
+			return false, nil
+		}
 		return true, nil
 	})
 
