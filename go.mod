@@ -3,8 +3,8 @@ module github.com/jxsl13/backupfs
 go 1.21
 
 require (
-	go.uber.org/mock v0.4.0
 	github.com/stretchr/testify v1.9.0
+	go.uber.org/mock v0.4.0
 )
 
 require (
