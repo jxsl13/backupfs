@@ -1,12 +1,12 @@
 package backupfs
 
 import (
-	"os"
+	"io/fs"
 	"strings"
 	"time"
 )
 
-func newPrefixFileInfo(base os.FileInfo, prefix string) os.FileInfo {
+func newPrefixFileInfo(base fs.FileInfo, prefix string) fs.FileInfo {
 	return &prefixFileInfo{
 		baseFi: base,
 		prefix: prefix,
@@ -15,7 +15,7 @@ func newPrefixFileInfo(base os.FileInfo, prefix string) os.FileInfo {
 
 // A FileInfo describes a file and is returned by Stat.
 type prefixFileInfo struct {
-	baseFi os.FileInfo
+	baseFi fs.FileInfo
 	prefix string
 }
 
@@ -25,7 +25,7 @@ func (fi *prefixFileInfo) Name() string {
 func (fi *prefixFileInfo) Size() int64 {
 	return fi.baseFi.Size()
 }
-func (fi *prefixFileInfo) Mode() os.FileMode {
+func (fi *prefixFileInfo) Mode() fs.FileMode {
 	return fi.baseFi.Mode()
 }
 func (fi *prefixFileInfo) ModTime() time.Time {

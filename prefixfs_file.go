@@ -1,17 +1,15 @@
 package backupfs
 
 import (
-	"os"
+	"io/fs"
 	"strings"
-
-	"github.com/spf13/afero"
 )
 
-var _ afero.File = (*PrefixFile)(nil)
+var _ File = (*PrefixFile)(nil)
 
 type PrefixFile struct {
-	f afero.File
-	// this prefix is clean due to th eFs prefix being clean
+	f File
+	// this prefix is clean due to th eFS prefix being clean
 	prefix string
 }
 
@@ -19,13 +17,13 @@ func (pf *PrefixFile) Name() string {
 	// hide the existence of the prefix
 	return strings.TrimPrefix(pf.f.Name(), pf.prefix)
 }
-func (pf *PrefixFile) Readdir(count int) ([]os.FileInfo, error) {
+func (pf *PrefixFile) Readdir(count int) ([]fs.FileInfo, error) {
 	return pf.f.Readdir(count)
 }
 func (pf *PrefixFile) Readdirnames(n int) ([]string, error) {
 	return pf.f.Readdirnames(n)
 }
-func (pf *PrefixFile) Stat() (os.FileInfo, error) {
+func (pf *PrefixFile) Stat() (fs.FileInfo, error) {
 	return pf.f.Stat()
 }
 func (pf *PrefixFile) Sync() error {

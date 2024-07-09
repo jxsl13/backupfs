@@ -1,14 +1,13 @@
-package internal
+package backupfs
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/spf13/afero"
 )
 
-func IsParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
+func isParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 	if len(hiddenPaths) == 0 {
 		return false, nil
 	}
@@ -17,7 +16,7 @@ func IsParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 	name = filepath.Clean(filepath.FromSlash(name))
 
 	for _, hiddenDir := range hiddenPaths {
-		isParentOfHiddenDir, err := DirContains(name, hiddenDir)
+		isParentOfHiddenDir, err := dirContains(name, hiddenDir)
 		if err != nil {
 			return false, err
 		}
@@ -31,7 +30,7 @@ func IsParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 
 const relParent = ".." + string(os.PathSeparator)
 
-func DirContains(parent, subdir string) (bool, error) {
+func dirContains(parent, subdir string) (bool, error) {
 	relPath, err := filepath.Rel(parent, subdir)
 	if err != nil {
 		return false, err
@@ -45,8 +44,6 @@ func DirContains(parent, subdir string) (bool, error) {
 }
 
 func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
-	// file normalization allows to use a single filepath separator
-
 	relPath, err = filepath.Rel(hiddenDir, name)
 	if err != nil {
 		return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
@@ -67,13 +64,8 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 	return relPath, true, nil
 }
 
-func IsInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
-	// file normalization allows to use a single filepath separator
-	name = filepath.Clean(filepath.FromSlash(name))
-	return isInHiddenPath(name, hiddenDir)
-}
-
-func IsHidden(name string, hiddenPaths []string) (bool, error) {
+// hiddenPaths should be normalized (filepath.Clean result values)
+func isHidden(name string, hiddenPaths []string) (bool, error) {
 	if len(hiddenPaths) == 0 {
 		return false, nil
 	}
@@ -93,10 +85,10 @@ func IsHidden(name string, hiddenPaths []string) (bool, error) {
 	return false, nil
 }
 
-func AllFiles(fs afero.Fs, dir string) ([]string, error) {
+func allFiles(fsys FS, dir string) ([]string, error) {
 	files := make([]string, 0)
 
-	err := afero.Walk(fs, dir, func(path string, info os.FileInfo, err error) error {
+	err := Walk(fsys, dir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

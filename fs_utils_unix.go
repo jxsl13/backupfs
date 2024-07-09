@@ -1,17 +1,17 @@
 //go:build linux || darwin
 // +build linux darwin
 
-package internal
+package backupfs
 
 import (
-	"os"
+	"io/fs"
 	"syscall"
 )
 
 // reference: os package
-var ChmodBits = os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+var chmodBits fs.FileMode = fs.ModePerm | fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky
 
-func Uid(from os.FileInfo) int {
+func Uid(from fs.FileInfo) int {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		return int(stat.Uid)
 	}
@@ -19,7 +19,7 @@ func Uid(from os.FileInfo) int {
 	return -1
 }
 
-func Gid(from os.FileInfo) int {
+func Gid(from fs.FileInfo) int {
 	if stat, ok := from.Sys().(*syscall.Stat_t); ok {
 		return int(stat.Gid)
 	}

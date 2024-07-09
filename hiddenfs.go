@@ -2,24 +2,20 @@ package backupfs
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"time"
-
-	"github.com/jxsl13/backupfs/internal"
-	"github.com/spf13/afero"
 )
 
 var (
 	// assert interfaces implemented
-	_ afero.Fs        = (*HiddenFs)(nil)
-	_ afero.Symlinker = (*HiddenFs)(nil)
-	_ LinkOwner       = (*HiddenFs)(nil)
+	_ FS = (*HiddenFS)(nil)
 
 	ErrHiddenNotExist        = fmt.Errorf("hidden: %w", os.ErrNotExist)
-	ErrHiddenPermission      = fmt.Errorf("hidden: %w", os.ErrPermission)
+	ErrHiddenPermission      = fmt.Errorf("hidden: %w", fs.ErrPermission)
 	wrapErrHiddenCheckFailed = func(err error) error {
 		return fmt.Errorf("hidden check failed: %w", err)
 	}
@@ -28,48 +24,48 @@ var (
 	}
 )
 
-// NewHiddenFs hides away anthing beneath the specified paths.
-func NewHiddenFs(base afero.Fs, hiddenPaths ...string) *HiddenFs {
+// NewHiddenFS hides away anthing beneath the specified paths.
+func NewHiddenFS(base FS, hiddenPaths ...string) *HiddenFS {
 	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 
 	for _, p := range hiddenPaths {
 		normalizedHiddenPaths = append(normalizedHiddenPaths, filepath.Clean(filepath.FromSlash(p)))
 	}
 
-	return &HiddenFs{
+	return &HiddenFS{
 		base:        base,
 		hiddenPaths: normalizedHiddenPaths,
 	}
 }
 
-// HiddenFs hides everything inside of a list of directory prefixes from the user.
+// HiddenFS hides everything inside of a list of directory prefixes from the user.
 // Does NOT hide the directory itself.
 // This abstraction is needed in order to prevent infinite backup loops in case that
-// BackupFs and HiddenFs are used together where the backup location of BackupFs is a
+// BackupFS and HiddenFS are used together where the backup location of BackupFS is a
 // prefixed path on the same underlying base filesystem (e.g. os filesystem).
 // In case you want to prevent accidentally falling into an infinite recursion
-// when walking and modifying files in the directory tree of a BackupFs struct
+// when walking and modifying files in the directory tree of a BackupFS struct
 // which also contains the backup location that is modified while walking over it
-// via the BackupFs layer.
+// via the BackupFS layer.
 //
-// Writing to the hidden paths results in a os.ErrPermission error
+// Writing to the hidden paths results in a fs.ErrPermission error
 // Reading/Stat/Lstat from the directories or files results in os.ErrNotExist errors
-type HiddenFs struct {
-	base        afero.Fs
+type HiddenFS struct {
+	base        FS
 	hiddenPaths []string
 }
 
-func (fs *HiddenFs) isHidden(name string) (bool, error) {
-	return internal.IsHidden(name, fs.hiddenPaths)
+func (fs *HiddenFS) isHidden(name string) (bool, error) {
+	return isHidden(name, fs.hiddenPaths)
 }
 
-func (fs *HiddenFs) isParentOfHidden(name string) (bool, error) {
-	return internal.IsParentOfHiddenDir(name, fs.hiddenPaths)
+func (fs *HiddenFS) isParentOfHidden(name string) (bool, error) {
+	return isParentOfHiddenDir(name, fs.hiddenPaths)
 }
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
-func (s *HiddenFs) Create(name string) (File, error) {
+func (s *HiddenFS) Create(name string) (File, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -86,7 +82,7 @@ func (s *HiddenFs) Create(name string) (File, error) {
 
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
-func (s *HiddenFs) Mkdir(name string, perm os.FileMode) error {
+func (s *HiddenFS) Mkdir(name string, perm fs.FileMode) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "mkdir", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -99,7 +95,7 @@ func (s *HiddenFs) Mkdir(name string, perm os.FileMode) error {
 
 // MkdirAll creates a directory path and all parents that does not exist
 // yet.
-func (s *HiddenFs) MkdirAll(name string, perm os.FileMode) error {
+func (s *HiddenFS) MkdirAll(name string, perm fs.FileMode) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "mkdir_all", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -113,12 +109,12 @@ func (s *HiddenFs) MkdirAll(name string, perm os.FileMode) error {
 
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
-func (s *HiddenFs) Open(name string) (File, error) {
+func (s *HiddenFS) Open(name string) (File, error) {
 	return s.OpenFile(name, os.O_RDONLY, 0)
 }
 
 // OpenFile opens a file using the given flags and the given mode.
-func (s *HiddenFs) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+func (s *HiddenFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -136,12 +132,12 @@ func (s *HiddenFs) OpenFile(name string, flag int, perm os.FileMode) (File, erro
 		return nil, err
 	}
 
-	return newHiddenFsFile(f, name, s.hiddenPaths), nil
+	return newHiddenFSFile(f, name, s.hiddenPaths), nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
 // happens.
-func (s *HiddenFs) Remove(name string) error {
+func (s *HiddenFS) Remove(name string) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "remove", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -155,7 +151,7 @@ func (s *HiddenFs) Remove(name string) error {
 
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
-func (s *HiddenFs) RemoveAll(name string) error {
+func (s *HiddenFS) RemoveAll(name string) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -164,7 +160,7 @@ func (s *HiddenFs) RemoveAll(name string) error {
 		return &os.PathError{Op: "remove_all", Path: name, Err: ErrHiddenNotExist}
 	}
 
-	fi, _, err := s.LstatIfPossible(name)
+	fi, err := s.Lstat(name)
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: err}
 	}
@@ -182,7 +178,7 @@ func (s *HiddenFs) RemoveAll(name string) error {
 	dirList := make([]string, 0, 2)
 
 	// directory -> walk the dir tree
-	err = afero.Walk(s.base, name, func(path string, info os.FileInfo, err error) error {
+	err = Walk(s.base, name, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -212,7 +208,7 @@ func (s *HiddenFs) RemoveAll(name string) error {
 
 	// sort dirs from most nested to least nested
 	// th this point all of th enon-hidden directories MUST not contain any files
-	sort.Sort(internal.ByMostFilePathSeparators(dirList))
+	sort.Sort(byMostFilePathSeparators(dirList))
 	for _, dir := range dirList {
 		containsHidden, err := s.isParentOfHidden(dir)
 		if err != nil {
@@ -231,7 +227,7 @@ func (s *HiddenFs) RemoveAll(name string) error {
 }
 
 // Rename renames a file.
-func (s *HiddenFs) Rename(oldname, newname string) error {
+func (s *HiddenFS) Rename(oldname, newname string) error {
 	hidden, err := s.isHidden(oldname)
 	if err != nil {
 		return &os.PathError{Op: "rename", Path: oldname, Err: wrapErrHiddenCheckFailed(err)}
@@ -253,7 +249,7 @@ func (s *HiddenFs) Rename(oldname, newname string) error {
 
 // Stat returns a FileInfo describing the named file, or an error, if any
 // happens.
-func (s *HiddenFs) Stat(name string) (os.FileInfo, error) {
+func (s *HiddenFS) Stat(name string) (fs.FileInfo, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "stat", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -265,12 +261,12 @@ func (s *HiddenFs) Stat(name string) (os.FileInfo, error) {
 }
 
 // The name of this FileSystem
-func (s *HiddenFs) Name() string {
-	return "HiddenFs"
+func (s *HiddenFS) Name() string {
+	return "HiddenFS"
 }
 
 // Chmod changes the mode of the named file to mode.
-func (s *HiddenFs) Chmod(name string, mode os.FileMode) error {
+func (s *HiddenFS) Chmod(name string, mode fs.FileMode) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "chmod", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -283,7 +279,7 @@ func (s *HiddenFs) Chmod(name string, mode os.FileMode) error {
 }
 
 // Chown changes the uid and gid of the named file.
-func (s *HiddenFs) Chown(name string, uid, gid int) error {
+func (s *HiddenFS) Chown(name string, uid, gid int) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "chown", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -294,8 +290,8 @@ func (s *HiddenFs) Chown(name string, uid, gid int) error {
 	return s.base.Chown(name, uid, gid)
 }
 
-//Chtimes changes the access and modification times of the named file
-func (s *HiddenFs) Chtimes(name string, atime, mtime time.Time) error {
+// Chtimes changes the access and modification times of the named file
+func (s *HiddenFS) Chtimes(name string, atime, mtime time.Time) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "chtimes", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -306,34 +302,22 @@ func (s *HiddenFs) Chtimes(name string, atime, mtime time.Time) error {
 	return s.base.Chtimes(name, atime, mtime)
 }
 
-// LstatIfPossible will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
+// Lstat will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
 // Else it will call Stat.
 // In addtion to the FileInfo, it will return a boolean telling whether Lstat was called or not.
-func (s *HiddenFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
+func (s *HiddenFS) Lstat(name string) (fs.FileInfo, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
-		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: wrapErrHiddenCheckFailed(err)}
+		return nil, &os.PathError{Op: "lstat", Path: name, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: ErrHiddenNotExist}
+		return nil, &os.PathError{Op: "lstat", Path: name, Err: ErrHiddenNotExist}
 	}
-
-	var (
-		fi          os.FileInfo
-		lstatCalled = false
-	)
-
-	baseLstater, ok := internal.LstaterIfPossible(s.base)
-	if ok {
-		fi, lstatCalled, err = baseLstater.LstatIfPossible(name)
-	} else {
-		fi, err = s.base.Stat(name)
-	}
-	return fi, lstatCalled, err
+	return s.base.Lstat(name)
 }
 
-//SymlinkIfPossible changes the access and modification times of the named file
-func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
+// Symlink changes the access and modification times of the named file
+func (s *HiddenFS) Symlink(oldname, newname string) error {
 	oldname = filepath.FromSlash(oldname)
 	newname = filepath.FromSlash(newname)
 
@@ -355,7 +339,6 @@ func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
 		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: wrapErrHiddenCheckFailed(err)}
 	}
 	if hidden {
-
 		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: ErrHiddenPermission}
 	}
 
@@ -368,17 +351,10 @@ func (s *HiddenFs) SymlinkIfPossible(oldname, newname string) error {
 		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: ErrHiddenPermission}
 	}
 
-	if linker, ok := s.base.(afero.Linker); ok {
-		err = linker.SymlinkIfPossible(oldname, newname)
-		if err != nil {
-			return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
-		}
-		return nil
-	}
-	return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: afero.ErrNoSymlink}
+	return s.base.Symlink(oldname, newname)
 }
 
-func (s *HiddenFs) ReadlinkIfPossible(name string) (string, error) {
+func (s *HiddenFS) Readlink(name string) (string, error) {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return "", &os.PathError{Op: "readlink", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -387,19 +363,10 @@ func (s *HiddenFs) ReadlinkIfPossible(name string) (string, error) {
 	if hidden {
 		return "", &os.PathError{Op: "readlink", Path: name, Err: ErrHiddenNotExist}
 	}
-
-	if reader, ok := s.base.(afero.LinkReader); ok {
-		path, err := reader.ReadlinkIfPossible(name)
-		if err != nil {
-			return "", &os.PathError{Op: "readlink", Path: name, Err: wrapErrHiddenCheckFailed(err)}
-		}
-		return path, nil
-	}
-
-	return "", &os.PathError{Op: "readlink", Path: name, Err: afero.ErrNoReadlink}
+	return s.base.Readlink(name)
 }
 
-func (s *HiddenFs) LchownIfPossible(name string, uid, gid int) error {
+func (s *HiddenFS) Lchown(name string, uid, gid int) error {
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "lchown", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -408,9 +375,5 @@ func (s *HiddenFs) LchownIfPossible(name string, uid, gid int) error {
 		return &os.PathError{Op: "lchown", Path: name, Err: ErrHiddenNotExist}
 	}
 
-	linkOwner, ok := s.base.(LinkOwner)
-	if !ok {
-		return &os.PathError{Op: "lchown", Path: name, Err: internal.ErrNoLchown}
-	}
-	return linkOwner.LchownIfPossible(name, uid, gid)
+	return s.base.Lchown(name, uid, gid)
 }

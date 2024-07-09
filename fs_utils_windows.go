@@ -1,19 +1,19 @@
-package internal
+package backupfs
 
 import (
 	"errors"
-	"os"
+	"io/fs"
 	"syscall"
 )
 
 // reference: os package
-var ChmodBits = os.FileMode(0600)
+var chmodBits fs.FileMode = 0600
 
-func Uid(from os.FileInfo) int {
+func Uid(from fs.FileInfo) int {
 	return -1
 }
 
-func Gid(from os.FileInfo) int {
+func Gid(from fs.FileInfo) int {
 	return -1
 }
 
