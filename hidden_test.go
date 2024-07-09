@@ -7,6 +7,8 @@ import (
 )
 
 func TestIsHidden(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	hiddenDir := "/var/opt/backups"
 

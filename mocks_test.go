@@ -15,19 +15,9 @@ import (
 
 //go:generate go run go.uber.org/mock/mockgen@v0.4.0 -package=backupfs -source=filesystem.go -destination=./mock_test.go FS
 
-func NewTestMockBackupFS(mockedBase FS) (backupLayer, BackupFS FS) {
-	rootPath := CallerPathTmp()
-	root := NewTempDirPrefixFS(rootPath)
+func TestMockFS_Lstat(t *testing.T) {
+	t.Parallel()
 
-	backupDir := "/backup"
-	err := root.MkdirAll(backupDir, 0700)
-	if err != nil {
-		panic(err)
-	}
-	backup := NewPrefixFS(root, backupDir)
-	return backup, NewBackupFS(mockedBase, backup)
-}
-func TestMockFSLstat(t *testing.T) {
 	require := require.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -105,7 +95,9 @@ func (fi *fileInfo) Sys() any {
 	return nil
 }
 
-func TestMockFSMkdir(t *testing.T) {
+func TestMockFS_Mkdir(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -157,5 +149,17 @@ func TestMockFSMkdir(t *testing.T) {
 			mustExist(t, backup, d.Path)
 		}
 	}
+}
 
+func NewTestMockBackupFS(mockedBase FS) (backupLayer, BackupFS FS) {
+	rootPath := CallerPathTmp()
+	root := NewTempDirPrefixFS(rootPath)
+
+	backupDir := "/backup"
+	err := root.MkdirAll(backupDir, 0700)
+	if err != nil {
+		panic(err)
+	}
+	backup := NewPrefixFS(root, backupDir)
+	return backup, NewBackupFS(mockedBase, backup)
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func FuzzHiddenFSCreate(f *testing.F) {
+func FuzzHiddenFS_Create(f *testing.F) {
 
 	for _, seed := range []string{".", "/", "..", "\\", "hidefs_test.txt", "/var/opt/backups", "/var/opt"} {
 		f.Add(seed)

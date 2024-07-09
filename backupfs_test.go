@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBackupFSCreate(t *testing.T) {
+func TestBackupFS_Create(t *testing.T) {
+	t.Parallel()
+
 	var (
 		basePrefix   = "/base"
 		backupPrefix = "/backup"
@@ -52,7 +54,8 @@ func TestBackupFSCreate(t *testing.T) {
 	mustNotExist(t, root, "backup"+newFilePath)
 }
 
-func TestBackupFSName(t *testing.T) {
+func TestBackupFS_Name(t *testing.T) {
+	t.Parallel()
 
 	require := require.New(t)
 	_, _, _, backupFS := NewTestBackupFS("/base", "/backup")
@@ -60,7 +63,8 @@ func TestBackupFSName(t *testing.T) {
 	require.Equal(backupFS.Name(), "BackupFS")
 }
 
-func TestBackupFSOpenFile(t *testing.T) {
+func TestBackupFS_OpenFile(t *testing.T) {
+	t.Parallel()
 
 	var (
 		basePrefix   = "/base"
@@ -96,7 +100,8 @@ func TestBackupFSOpenFile(t *testing.T) {
 	mustNotExist(t, root, "backup"+newFilePath)
 }
 
-func TestBackupFSRemove(t *testing.T) {
+func TestBackupFS_Remove(t *testing.T) {
+	t.Parallel()
 
 	var (
 		basePrefix   = "/base"
@@ -121,7 +126,8 @@ func TestBackupFSRemove(t *testing.T) {
 	mustExist(t, root, "backup"+filePath)
 }
 
-func TestBackupFSRemoveAll(t *testing.T) {
+func TestBackupFS_RemoveAll(t *testing.T) {
+	t.Parallel()
 
 	var (
 		basePrefix   = "/base"
@@ -181,10 +187,10 @@ func TestBackupFSRemoveAll(t *testing.T) {
 
 	mustExist(t, backup, fileDir)
 	mustExist(t, backup, fileDir2)
-
 }
 
-func TestBackupFSRename(t *testing.T) {
+func TestBackupFS_Rename(t *testing.T) {
+	t.Parallel()
 
 	var (
 		require      = require.New(t)
@@ -226,7 +232,8 @@ func TestBackupFSRename(t *testing.T) {
 	mustNotExist(t, backup, newerDirName)
 }
 
-func TestBackupFSRollback(t *testing.T) {
+func TestBackupFS_Rollback(t *testing.T) {
+	t.Parallel()
 
 	var (
 		require      = require.New(t)
@@ -317,7 +324,8 @@ func TestBackupFSRollback(t *testing.T) {
 	mustExist(t, backupFS, fileDir)
 }
 
-func TestBackupFSRollbackWithForcedBackup(t *testing.T) {
+func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
+	t.Parallel()
 
 	var (
 		require      = require.New(t)
@@ -415,7 +423,8 @@ func TestBackupFSRollbackWithForcedBackup(t *testing.T) {
 	mustNotExist(t, backupFS, fileDir)
 }
 
-func TestBackupFSJSON(t *testing.T) {
+func TestBackupFS_JSON(t *testing.T) {
+	t.Parallel()
 
 	var (
 		require      = require.New(t)
@@ -532,10 +541,10 @@ func TestBackupFSJSON(t *testing.T) {
 	// but old directories that did exist before should still exist
 	mustExist(t, base, "/test/001")
 	mustExist(t, backupFSNew, "/test/001")
-
 }
 
 func TestBackupFS_Symlink(t *testing.T) {
+	t.Parallel()
 
 	var (
 		basePrefix   = "/base"
@@ -609,6 +618,7 @@ func TestBackupFS_Symlink(t *testing.T) {
 }
 
 func TestBackupFS_Mkdir(t *testing.T) {
+	t.Parallel()
 
 	var (
 		require      = require.New(t)
@@ -645,6 +655,8 @@ func TestBackupFS_Mkdir(t *testing.T) {
 }
 
 func TestBackupFS_Chmod(t *testing.T) {
+	t.Parallel()
+
 	var (
 		require      = require.New(t)
 		basePrefix   = "/base"

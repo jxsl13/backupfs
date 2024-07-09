@@ -58,8 +58,9 @@ func walk(fs FS, path string, info fs.FileInfo, walkFn filepath.WalkFunc) error 
 	return nil
 }
 
+// Walk walks the file tree rooted at root, calling walkFn for each file
+// or directory in the tree, including root. All errors that arise visiting
 func Walk(fsys FS, root string, walkFn filepath.WalkFunc) error {
-
 	info, err := fsys.Lstat(root)
 	if err != nil {
 		return walkFn(root, nil, err)

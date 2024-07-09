@@ -8,38 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func NewTestTempDirHiddenFS(hiddenPaths ...string) (base FS, hfs *HiddenFS) {
-	return newTestTempDirHiddenFS(0, hiddenPaths...)
-}
-
-func newTestTempDirHiddenFS(caller int, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
-	rootPath := CallerPathTmp(caller)
-	root := NewTempDirPrefixFS(rootPath)
-
-	hidden := "/hidden"
-	err := root.MkdirAll(hidden, 0700)
-	if err != nil {
-		panic(err)
-	}
-	base = NewPrefixFS(root, hidden)
-	return base, NewHiddenFS(base, hiddenPaths...)
-}
-
-func SetupTempDirHiddenFSTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base FS, fs *HiddenFS) {
-	hiddenDirParent = "/var/opt"
-	hiddenDir = "/var/opt/backups"
-	hiddenFile = "hidden_file.txt"
-
-	// prepare base filesystem before using the hidden fs layer
-	base, fs = newTestTempDirHiddenFS(1, hiddenDir)
-
-	mkdir(t, base, hiddenDirParent, 0775)
-	mkdirAll(t, base, hiddenDir, 0775)
-	createFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
-	return
-}
-
-func TestCountFiles(t *testing.T) {
+func TestHiddenFS_CountFiles(t *testing.T) {
+	t.Parallel()
 
 	hiddenDirParent, hiddenDir, _, base, fsys := SetupTempDirHiddenFSTest(t)
 
@@ -47,7 +17,8 @@ func TestCountFiles(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 1)
 }
 
-func TestHiddenFSCreate(t *testing.T) {
+func TestHiddenFS_Create(t *testing.T) {
+	t.Parallel()
 
 	require := require.New(t)
 	hiddenDirParent, hiddenDir, hiddenFile, base, fsys := SetupTempDirHiddenFSTest(t)
@@ -69,7 +40,8 @@ func TestHiddenFSCreate(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 2)
 }
 
-func TestHiddenFSMkdir(t *testing.T) {
+func TestHiddenFS_Mkdir(t *testing.T) {
+	t.Parallel()
 
 	require := require.New(t)
 	hiddenDirParent, hiddenDir, hiddenFile, base, fsys := SetupTempDirHiddenFSTest(t)
@@ -93,7 +65,8 @@ func TestHiddenFSMkdir(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 2)
 }
 
-func TestHiddenFSMkdirAll(t *testing.T) {
+func TestHiddenFS_MkdirAll(t *testing.T) {
+	t.Parallel()
 
 	require := require.New(t)
 	hiddenDirParent, hiddenDir, hiddenFile, base, fsys := SetupTempDirHiddenFSTest(t)
@@ -115,7 +88,8 @@ func TestHiddenFSMkdirAll(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 6)
 }
 
-func TestHiddenFSOpenFile(t *testing.T) {
+func TestHiddenFS_OpenFile(t *testing.T) {
+	t.Parallel()
 
 	require := require.New(t)
 	hiddenDirParent, hiddenDir, hiddenFile, base, fsys := SetupTempDirHiddenFSTest(t)
@@ -139,7 +113,8 @@ func TestHiddenFSOpenFile(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 6)
 }
 
-func TestHiddenFSRemove(t *testing.T) {
+func TestHiddenFS_Remove(t *testing.T) {
+	t.Parallel()
 
 	require := require.New(t)
 	hiddenDirParent, hiddenDir, hiddenFile, base, fsys := SetupTempDirHiddenFSTest(t)
@@ -156,9 +131,10 @@ func TestHiddenFSRemove(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 1)
 }
 
-func TestHiddenFSRemoveAll(t *testing.T) {
-	require := require.New(t)
+func TestHiddenFS_RemoveAll(t *testing.T) {
+	t.Parallel()
 
+	require := require.New(t)
 	hiddenDirParent, hiddenDir, _, base, fsys := SetupTempDirHiddenFSTest(t)
 
 	createFile(t, fsys, filepath.Join(hiddenDir[:len(hiddenDir)-2], "should_be_created"), "text")
@@ -174,8 +150,9 @@ func TestHiddenFSRemoveAll(t *testing.T) {
 }
 
 func TestHiddenFSSymlink(t *testing.T) {
-	require := require.New(t)
+	t.Parallel()
 
+	require := require.New(t)
 	hiddenDirParent, hiddenDir, hiddenFile, base, fsys := SetupTempDirHiddenFSTest(t)
 
 	var (
@@ -212,4 +189,35 @@ func TestHiddenFSSymlink(t *testing.T) {
 	// at the end the hidden directory should containthe same number of files as before
 	countFiles(t, base, hiddenDir, 2)
 	countFiles(t, fsys, hiddenDirParent, 4)
+}
+
+func NewTestTempDirHiddenFS(hiddenPaths ...string) (base FS, hfs *HiddenFS) {
+	return newTestTempDirHiddenFS(0, hiddenPaths...)
+}
+
+func newTestTempDirHiddenFS(caller int, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
+	rootPath := CallerPathTmp(caller)
+	root := NewTempDirPrefixFS(rootPath)
+
+	hidden := "/hidden"
+	err := root.MkdirAll(hidden, 0700)
+	if err != nil {
+		panic(err)
+	}
+	base = NewPrefixFS(root, hidden)
+	return base, NewHiddenFS(base, hiddenPaths...)
+}
+
+func SetupTempDirHiddenFSTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base FS, fs *HiddenFS) {
+	hiddenDirParent = "/var/opt"
+	hiddenDir = "/var/opt/backups"
+	hiddenFile = "hidden_file.txt"
+
+	// prepare base filesystem before using the hidden fs layer
+	base, fs = newTestTempDirHiddenFS(1, hiddenDir)
+
+	mkdir(t, base, hiddenDirParent, 0775)
+	mkdirAll(t, base, hiddenDir, 0775)
+	createFile(t, base, filepath.Join(hiddenDir, hiddenFile), "hidden content")
+	return
 }

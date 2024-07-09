@@ -7,26 +7,26 @@ import (
 	"path/filepath"
 )
 
-var _ File = (*HiddenFSFile)(nil)
+var _ File = (*hiddenFSFile)(nil)
 
-func newHiddenFSFile(f File, filePath string, hiddenPaths []string) *HiddenFSFile {
-	return &HiddenFSFile{
+func newHiddenFSFile(f File, filePath string, hiddenPaths []string) *hiddenFSFile {
+	return &hiddenFSFile{
 		filePath:    filePath,
 		f:           f,
 		hiddenPaths: hiddenPaths,
 	}
 }
 
-type HiddenFSFile struct {
+type hiddenFSFile struct {
 	f           File
 	filePath    string
 	hiddenPaths []string
 }
 
-func (hf *HiddenFSFile) Name() string {
+func (hf *hiddenFSFile) Name() string {
 	return hf.f.Name()
 }
-func (hf *HiddenFSFile) Readdir(count int) ([]fs.FileInfo, error) {
+func (hf *hiddenFSFile) Readdir(count int) ([]fs.FileInfo, error) {
 	var availableFiles []fs.FileInfo
 	if count > 0 {
 		availableFiles = make([]fs.FileInfo, 0, count)
@@ -78,7 +78,7 @@ func (hf *HiddenFSFile) Readdir(count int) ([]fs.FileInfo, error) {
 
 	return availableFiles, nil
 }
-func (hf *HiddenFSFile) Readdirnames(count int) ([]string, error) {
+func (hf *hiddenFSFile) Readdirnames(count int) ([]string, error) {
 	var availableFiles []string
 	if count > 0 {
 		availableFiles = make([]string, 0, count)
@@ -131,39 +131,39 @@ func (hf *HiddenFSFile) Readdirnames(count int) ([]string, error) {
 
 	return availableFiles, nil
 }
-func (hf *HiddenFSFile) Stat() (fs.FileInfo, error) {
+func (hf *hiddenFSFile) Stat() (fs.FileInfo, error) {
 	return hf.f.Stat()
 }
-func (hf *HiddenFSFile) Sync() error {
+func (hf *hiddenFSFile) Sync() error {
 	return hf.f.Sync()
 }
-func (hf *HiddenFSFile) Truncate(size int64) error {
+func (hf *hiddenFSFile) Truncate(size int64) error {
 	return hf.f.Truncate(size)
 }
-func (hf *HiddenFSFile) WriteString(s string) (ret int, err error) {
+func (hf *hiddenFSFile) WriteString(s string) (ret int, err error) {
 	return hf.f.WriteString(s)
 }
 
-func (hf *HiddenFSFile) Close() error {
+func (hf *hiddenFSFile) Close() error {
 	return hf.f.Close()
 }
 
-func (hf *HiddenFSFile) Read(p []byte) (n int, err error) {
+func (hf *hiddenFSFile) Read(p []byte) (n int, err error) {
 	return hf.f.Read(p)
 }
 
-func (hf *HiddenFSFile) ReadAt(p []byte, off int64) (n int, err error) {
+func (hf *hiddenFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 	return hf.f.ReadAt(p, off)
 }
 
-func (hf *HiddenFSFile) Seek(offset int64, whence int) (int64, error) {
+func (hf *hiddenFSFile) Seek(offset int64, whence int) (int64, error) {
 	return hf.f.Seek(offset, whence)
 }
 
-func (hf *HiddenFSFile) Write(p []byte) (n int, err error) {
+func (hf *hiddenFSFile) Write(p []byte) (n int, err error) {
 	return hf.f.Write(p)
 }
 
-func (hf *HiddenFSFile) WriteAt(p []byte, off int64) (n int, err error) {
+func (hf *hiddenFSFile) WriteAt(p []byte, off int64) (n int, err error) {
 	return hf.f.WriteAt(p, off)
 }
