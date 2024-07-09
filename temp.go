@@ -53,11 +53,6 @@ func randIntRange(min int, max int) int {
 	return min + int(rbi.Int64())
 }
 
-// randString generates a random alphanumeric string of the length specified
-func randString(strlen int) string {
-	return randStringFromCharSet(strlen, charSetAlphaNum)
-}
-
 // randStringFromCharSet generates a random string by selecting characters from
 // the charset provided
 func randStringFromCharSet(strlen int, charSet string) string {

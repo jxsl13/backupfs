@@ -25,13 +25,13 @@ func fileMustContainText(t *testing.T, fsys FS, path, content string) {
 	require.Equal(string(b), content)
 }
 
-func symlinkMustExist(t *testing.T, fsys FS, symlinkPath string) {
+func symlinkMustExist(t *testing.T, fsys FS, symlinkPath string) (path string) {
 	symlinkPath = filepath.Clean(symlinkPath)
 
 	require := require.New(t)
 
 	fi, err := fsys.Lstat(symlinkPath)
-	require.Falsef(errors.Is(err, fs.ErrNotExist), "target symlink does not exist but is expected to exist: %s", symlinkPath)
+	require.NotErrorIs(fs.ErrNotExist, err, "target symlink does not exist but is expected to exist: ", symlinkPath)
 	require.NoError(err)
 
 	hasSymlinkFlag := fi.Mode()&os.ModeType&os.ModeSymlink != 0
@@ -41,25 +41,14 @@ func symlinkMustExist(t *testing.T, fsys FS, symlinkPath string) {
 	require.NoError(err)
 
 	require.True(actualPointsTo != "", "symlink target path is empty")
+	return actualPointsTo
 }
 
 func symlinkMustExistWithTragetPath(t *testing.T, fsys FS, symlinkPath, expectedPointsTo string) {
-	symlinkPath = filepath.Clean(symlinkPath)
 	expectedPointsTo = filepath.Clean(expectedPointsTo)
+	actualPointsTo := symlinkMustExist(t, fsys, symlinkPath)
 
-	require := require.New(t)
-
-	fi, err := fsys.Lstat(symlinkPath)
-	require.NotErrorIs(fs.ErrNotExist, err, "target symlink does not exist but is expected to exist: ", symlinkPath)
-	require.NoError(err)
-
-	hasSymlinkFlag := fi.Mode()&os.ModeType&os.ModeSymlink != 0
-	require.True(hasSymlinkFlag, "target symlink does not have the symlink flag: ", symlinkPath)
-
-	actualPointsTo, err := fsys.Readlink(symlinkPath)
-	require.NoError(err)
-
-	require.Equalf(expectedPointsTo, actualPointsTo, "symlink located at %s does not point to the expected path", symlinkPath)
+	require.Equalf(t, expectedPointsTo, actualPointsTo, "symlink located at %s does not point to the expected path", symlinkPath)
 }
 
 func mustNotExist(t *testing.T, fsys FS, path string) {
