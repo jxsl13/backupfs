@@ -9,11 +9,11 @@ import (
 // reference: os package
 var chmodBits fs.FileMode = 0600
 
-func Uid(from fs.FileInfo) int {
+func toUID(from fs.FileInfo) int {
 	return -1
 }
 
-func Gid(from fs.FileInfo) int {
+func toGID(from fs.FileInfo) int {
 	return -1
 }
 
