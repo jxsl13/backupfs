@@ -25,31 +25,44 @@ var (
 	ErrRollbackFailed = errors.New("rollback failed")
 )
 
-// NewBackupFS creates a new layered backup file system that backups files from fs to backup in case that an
-// existing file in fs is about to be overwritten or removed.
-func NewBackupFS(base, backup FS) *BackupFS {
-	return &BackupFS{
-		base:   base,
-		backup: backup,
+// Options in order to manipulate the behavior of the BackupFS
+type BackupFSOption func(*backupFSOptions)
 
-		// this map is needed in order to keep track of non existing files
-		// consecutive changes might lead to files being backed up
-		// that were never there before
-		// but could have been written by us in the mean time.
-		// without this structure we would never know whether there was actually
-		// no previous file to be backed up.
-		baseInfos: make(map[string]fs.FileInfo),
-	}
+// New creates a new layered backup file system that backups files from the OS filesystem the backup location in case that an
+// existing file in the OS filesystem is about to be overwritten or removed.
+// The backup location is hidden from the user's access in order to prevent infinite backup recursions.
+// The returned BackupFS is OS-independent and can also be used with Windows paths.
+func New(backupLocation string, opts ...BackupFSOption) *BackupFS {
+	return NewWithFS(NewOSFS(), backupLocation, opts...)
 }
 
-// NewBackupFSWithVolume creates a new layered backup file system that backups files from fs to backup in case that an
+// NewWithFS creates a new layered backup file system that backups files from fs to backup in case that an
 // existing file in fs is about to be overwritten or removed.
-// Contrary to the normal BackupFS this variant allows to use absolute windows paths (C:\A\B\C instead of \A\B\C)
-func NewBackupFSWithVolume(base, backup FS) *BackupFS {
-	return &BackupFS{
+// The backup location is hidden from the user's access i norder to prevent infinite backup recursions.
+// The returned BackupFS is OS-independent and can also be used with Windows paths.
+func NewWithFS(baseFS FS, backupLocation string, opts ...BackupFSOption) *BackupFS {
+	fsys := NewBackupFS(
+		NewHiddenFS(baseFS, backupLocation),
+		NewPrefixFS(baseFS, backupLocation),
+		// put our default option first in order for it to be overwritable later
+		append([]BackupFSOption{WithVolumePaths(true)}, opts...)...,
+	)
+	return fsys
+}
+
+// NewBackupFS creates a new layered backup file system that backups files from fs to backup in case that an
+// existing file in fs is about to be overwritten or removed.
+func NewBackupFS(base, backup FS, opts ...BackupFSOption) *BackupFS {
+	opt := &backupFSOptions{}
+
+	for _, o := range opts {
+		o(opt)
+	}
+
+	bfsys := &BackupFS{
+		windowsVolumePaths: opt.allowWindowsVolumePaths,
 		base:               base,
 		backup:             backup,
-		windowsVolumePaths: true,
 
 		// this map is needed in order to keep track of non existing files
 		// consecutive changes might lead to files being backed up
@@ -59,6 +72,7 @@ func NewBackupFSWithVolume(base, backup FS) *BackupFS {
 		// no previous file to be backed up.
 		baseInfos: make(map[string]fs.FileInfo),
 	}
+	return bfsys
 }
 
 // BackupFS is a file system abstraction that takes two underlying filesystems.
@@ -83,13 +97,13 @@ type BackupFS struct {
 	windowsVolumePaths bool
 }
 
-// GetBaseFS returns the fs layer that is being written to
-func (fsys *BackupFS) GetBaseFS() FS {
+// BaseFS returns the fs layer that is being written to
+func (fsys *BackupFS) BaseFS() FS {
 	return fsys.base
 }
 
-// GetBackupFS returns the fs layer that is used to store the backups
-func (fsys *BackupFS) GetBackupFS() FS {
+// BackupFS returns the fs layer that is used to store the backups
+func (fsys *BackupFS) BackupFS() FS {
 	return fsys.backup
 }
 
