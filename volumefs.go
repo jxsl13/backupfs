@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -14,7 +15,7 @@ var (
 	_ FS = (*VolumeFS)(nil)
 )
 
-type volumeFile = PrefixFile
+type volumeFile = prefixFile
 type volumeFileInfo = prefixFileInfo
 
 // VolumeFS is specifically designed to prefix absolute paths with a defined volume like C:, D:, E: etc.
@@ -35,7 +36,7 @@ func (v *VolumeFS) prefixPath(name string) (string, error) {
 
 	volumePrefix := filepath.VolumeName(name)
 	if volumePrefix != "" {
-		return "", os.ErrNotExist
+		return "", syscall.EPERM
 	}
 
 	return filepath.Clean(filepath.Join(v.volume, name)), nil
@@ -53,7 +54,7 @@ func NewVolumeFS(volume string, fs FS) *VolumeFS {
 func (v *VolumeFS) Create(name string) (File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "create", Path: name, Err: err}
 	}
 
 	f, err := v.base.Create(path)
@@ -69,10 +70,14 @@ func (v *VolumeFS) Create(name string) (File, error) {
 func (v *VolumeFS) Mkdir(name string, perm fs.FileMode) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "mkdir", Path: name, Err: err}
 	}
 
-	return v.base.Mkdir(path, perm)
+	err = v.base.Mkdir(path, perm)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // MkdirAll creates a directory path and all parents that does not exist
@@ -80,10 +85,14 @@ func (v *VolumeFS) Mkdir(name string, perm fs.FileMode) error {
 func (v *VolumeFS) MkdirAll(name string, perm fs.FileMode) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "mkdir_all", Path: name, Err: err}
 	}
 
-	return v.base.MkdirAll(path, perm)
+	err = v.base.MkdirAll(path, perm)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Open opens a file, returning it or an error, if any happens.
@@ -91,7 +100,7 @@ func (v *VolumeFS) MkdirAll(name string, perm fs.FileMode) error {
 func (v *VolumeFS) Open(name string) (File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 	}
 
 	f, err := v.base.Open(path)
@@ -106,7 +115,7 @@ func (v *VolumeFS) Open(name string) (File, error) {
 func (v *VolumeFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "open_file", Path: name, Err: err}
 	}
 
 	f, err := v.base.OpenFile(path, flag, perm)
@@ -122,10 +131,14 @@ func (v *VolumeFS) OpenFile(name string, flag int, perm fs.FileMode) (File, erro
 func (v *VolumeFS) Remove(name string) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "remove", Path: name, Err: err}
 	}
 
-	return v.base.Remove(path)
+	err = v.base.Remove(path)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // RemoveAll removes a directory path and any children it contains. It
@@ -133,24 +146,32 @@ func (v *VolumeFS) Remove(name string) error {
 func (v *VolumeFS) RemoveAll(name string) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "remove_all", Path: name, Err: err}
 	}
 
-	return v.base.RemoveAll(path)
+	err = v.base.RemoveAll(path)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Rename renames a file.
 func (v *VolumeFS) Rename(oldname, newname string) error {
 	oldpath, err := v.prefixPath(oldname)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "rename", Path: newname, Err: err}
 	}
 	newpath, err := v.prefixPath(newname)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "rename", Path: newname, Err: err}
 	}
 
-	return v.base.Rename(oldpath, newpath)
+	err = v.base.Rename(oldpath, newpath)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Stat returns a FileInfo describing the named file, or an error, if any
@@ -158,7 +179,7 @@ func (v *VolumeFS) Rename(oldname, newname string) error {
 func (v *VolumeFS) Stat(name string) (fs.FileInfo, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: err}
 	}
 
 	fi, err := v.base.Stat(path)
@@ -178,29 +199,41 @@ func (v *VolumeFS) Name() string {
 func (v *VolumeFS) Chmod(name string, mode fs.FileMode) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "chmod", Path: name, Err: err}
 	}
 
-	return v.base.Chmod(path, mode)
+	err = v.base.Chmod(path, mode)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Chown changes the uid and gid of the named file.
 func (v *VolumeFS) Chown(name string, uid, gid int) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "chown", Path: name, Err: err}
 	}
 
-	return v.base.Chown(path, uid, gid)
+	err = v.base.Chown(path, uid, gid)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Chtimes changes the access and modification times of the named file
 func (v *VolumeFS) Chtimes(name string, atime, mtime time.Time) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
+		return &fs.PathError{Op: "chtimes", Path: name, Err: err}
+	}
+	err = v.base.Chtimes(path, atime, mtime)
+	if err != nil {
 		return err
 	}
-	return v.base.Chtimes(path, atime, mtime)
+	return nil
 }
 
 // Lstat will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
@@ -209,7 +242,7 @@ func (v *VolumeFS) Chtimes(name string, atime, mtime time.Time) error {
 func (v *VolumeFS) Lstat(name string) (fs.FileInfo, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "lstat", Path: name, Err: err}
 	}
 
 	fi, err := v.base.Lstat(path)
@@ -233,6 +266,7 @@ func (v *VolumeFS) Symlink(oldname, newname string) error {
 		oldPath, err = v.prefixPath(oldname)
 	} else {
 		// relative path symlink
+		// TODO: oldname could escape the volume prefix using relative paths
 		oldPath = oldname
 	}
 
@@ -242,16 +276,20 @@ func (v *VolumeFS) Symlink(oldname, newname string) error {
 
 	newPath, err := v.prefixPath(newname)
 	if err != nil {
-		return err
+		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
 	}
 
-	return v.base.Symlink(oldPath, newPath)
+	err = v.base.Symlink(oldPath, newPath)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (v *VolumeFS) Readlink(name string) (string, error) {
 	path, err := v.prefixPath(name)
 	if err != nil {
-		return "", err
+		return "", &fs.PathError{Op: "readlink", Path: name, Err: err}
 	}
 
 	linkedPath, err := v.base.Readlink(path)
@@ -266,9 +304,13 @@ func (v *VolumeFS) Readlink(name string) (string, error) {
 func (v *VolumeFS) Lchown(name string, uid, gid int) error {
 	path, err := v.prefixPath(name)
 	if err != nil {
+		return &fs.PathError{Op: "lchown", Path: name, Err: err}
+	}
+	err = v.base.Lchown(path, uid, gid)
+	if err != nil {
 		return err
 	}
-	return v.base.Lchown(path, uid, gid)
+	return nil
 }
 
 // TrimVolume trims the volume prefix of a given filepath. C:\A\B\C -> \A\B\C

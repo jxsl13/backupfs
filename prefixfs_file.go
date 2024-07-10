@@ -5,57 +5,61 @@ import (
 	"strings"
 )
 
-var _ File = (*PrefixFile)(nil)
+var _ File = (*prefixFile)(nil)
 
-type PrefixFile struct {
+type prefixFile struct {
 	f File
 	// this prefix is clean due to th eFS prefix being clean
 	prefix string
 }
 
-func (pf *PrefixFile) Name() string {
+func (pf *prefixFile) Name() string {
 	// hide the existence of the prefix
 	return strings.TrimPrefix(pf.f.Name(), pf.prefix)
 }
-func (pf *PrefixFile) Readdir(count int) ([]fs.FileInfo, error) {
+func (pf *prefixFile) Readdir(count int) ([]fs.FileInfo, error) {
 	return pf.f.Readdir(count)
 }
-func (pf *PrefixFile) Readdirnames(n int) ([]string, error) {
+func (pf *prefixFile) Readdirnames(n int) ([]string, error) {
 	return pf.f.Readdirnames(n)
 }
-func (pf *PrefixFile) Stat() (fs.FileInfo, error) {
+func (pf *prefixFile) Stat() (fs.FileInfo, error) {
 	return pf.f.Stat()
 }
-func (pf *PrefixFile) Sync() error {
+func (pf *prefixFile) Sync() error {
 	return pf.f.Sync()
 }
-func (pf *PrefixFile) Truncate(size int64) error {
+func (pf *prefixFile) Truncate(size int64) error {
 	return pf.f.Truncate(size)
 }
-func (pf *PrefixFile) WriteString(s string) (ret int, err error) {
+func (pf *prefixFile) WriteString(s string) (ret int, err error) {
 	return pf.f.WriteString(s)
 }
 
-func (pf *PrefixFile) Close() error {
-	return pf.f.Close()
+func (pf *prefixFile) Close() error {
+	err := pf.f.Close()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (pf *PrefixFile) Read(p []byte) (n int, err error) {
+func (pf *prefixFile) Read(p []byte) (n int, err error) {
 	return pf.f.Read(p)
 }
 
-func (pf *PrefixFile) ReadAt(p []byte, off int64) (n int, err error) {
+func (pf *prefixFile) ReadAt(p []byte, off int64) (n int, err error) {
 	return pf.f.ReadAt(p, off)
 }
 
-func (pf *PrefixFile) Seek(offset int64, whence int) (int64, error) {
+func (pf *prefixFile) Seek(offset int64, whence int) (int64, error) {
 	return pf.f.Seek(offset, whence)
 }
 
-func (pf *PrefixFile) Write(p []byte) (n int, err error) {
+func (pf *prefixFile) Write(p []byte) (n int, err error) {
 	return pf.f.Write(p)
 }
 
-func (pf *PrefixFile) WriteAt(p []byte, off int64) (n int, err error) {
+func (pf *prefixFile) WriteAt(p []byte, off int64) (n int, err error) {
 	return pf.f.WriteAt(p, off)
 }

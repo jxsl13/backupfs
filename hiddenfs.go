@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,7 @@ func NewHiddenFS(base FS, hiddenPaths ...string) *HiddenFS {
 		normalizedHiddenPaths = append(normalizedHiddenPaths, filepath.Clean(filepath.FromSlash(p)))
 	}
 
+	sort.Sort(byMostFilePathSeparators(normalizedHiddenPaths))
 	return &HiddenFS{
 		base:        base,
 		hiddenPaths: normalizedHiddenPaths,
@@ -90,7 +92,11 @@ func (s *HiddenFS) Mkdir(name string, perm fs.FileMode) error {
 	if hidden {
 		return &os.PathError{Op: "mkdir", Path: name, Err: ErrHiddenPermission}
 	}
-	return s.base.Mkdir(name, perm)
+	err = s.base.Mkdir(name, perm)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // MkdirAll creates a directory path and all parents that does not exist
@@ -128,11 +134,11 @@ func (s *HiddenFS) OpenFile(name string, flag int, perm fs.FileMode) (File, erro
 		return nil, &os.PathError{Op: "open", Path: name, Err: ErrHiddenNotExist}
 	}
 	f, err := s.base.OpenFile(name, flag, perm)
-	if err != nil || f == nil {
+	if err != nil {
 		return nil, err
 	}
 
-	return newHiddenFSFile(f, name, s.hiddenPaths), nil
+	return newHiddenFile(f, name, s.hiddenPaths), nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
@@ -146,7 +152,11 @@ func (s *HiddenFS) Remove(name string) error {
 		return &os.PathError{Op: "remove", Path: name, Err: ErrHiddenNotExist}
 	}
 
-	return s.base.Remove(name)
+	err = s.base.Remove(name)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // RemoveAll removes a directory path and any children it contains. It
@@ -200,7 +210,11 @@ func (s *HiddenFS) RemoveAll(name string) error {
 		}
 
 		// file or symlink or whatever else
-		return s.Remove(path)
+		err = s.Remove(path)
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: err}
@@ -244,7 +258,11 @@ func (s *HiddenFS) Rename(oldname, newname string) error {
 		return &os.PathError{Op: "rename", Path: newname, Err: ErrHiddenPermission}
 	}
 
-	return s.base.Rename(oldname, newname)
+	err = s.base.Rename(oldname, newname)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Stat returns a FileInfo describing the named file, or an error, if any
@@ -257,7 +275,11 @@ func (s *HiddenFS) Stat(name string) (fs.FileInfo, error) {
 	if hidden {
 		return nil, &os.PathError{Op: "stat", Path: name, Err: ErrHiddenNotExist}
 	}
-	return s.base.Stat(name)
+	fi, err := s.base.Stat(name)
+	if err != nil {
+		return nil, err
+	}
+	return fi, nil
 }
 
 // The name of this FileSystem
@@ -275,7 +297,11 @@ func (s *HiddenFS) Chmod(name string, mode fs.FileMode) error {
 		return &os.PathError{Op: "chmod", Path: name, Err: ErrHiddenNotExist}
 	}
 
-	return s.base.Chmod(name, mode)
+	err = s.base.Chmod(name, mode)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Chown changes the uid and gid of the named file.
@@ -287,7 +313,11 @@ func (s *HiddenFS) Chown(name string, uid, gid int) error {
 	if hidden {
 		return &os.PathError{Op: "chown", Path: name, Err: ErrHiddenNotExist}
 	}
-	return s.base.Chown(name, uid, gid)
+	err = s.base.Chown(name, uid, gid)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Chtimes changes the access and modification times of the named file
@@ -299,7 +329,11 @@ func (s *HiddenFS) Chtimes(name string, atime, mtime time.Time) error {
 	if hidden {
 		return &os.PathError{Op: "chtimes", Path: name, Err: ErrHiddenNotExist}
 	}
-	return s.base.Chtimes(name, atime, mtime)
+	err = s.base.Chtimes(name, atime, mtime)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Lstat will call Lstat if the filesystem itself is, or it delegates to, the os filesystem.
@@ -313,7 +347,11 @@ func (s *HiddenFS) Lstat(name string) (fs.FileInfo, error) {
 	if hidden {
 		return nil, &os.PathError{Op: "lstat", Path: name, Err: ErrHiddenNotExist}
 	}
-	return s.base.Lstat(name)
+	fi, err := s.base.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	return fi, nil
 }
 
 // Symlink changes the access and modification times of the named file
@@ -351,7 +389,11 @@ func (s *HiddenFS) Symlink(oldname, newname string) error {
 		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: ErrHiddenPermission}
 	}
 
-	return s.base.Symlink(oldname, newname)
+	err = s.base.Symlink(oldname, newname)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *HiddenFS) Readlink(name string) (string, error) {
@@ -363,7 +405,11 @@ func (s *HiddenFS) Readlink(name string) (string, error) {
 	if hidden {
 		return "", &os.PathError{Op: "readlink", Path: name, Err: ErrHiddenNotExist}
 	}
-	return s.base.Readlink(name)
+	link, err := s.base.Readlink(name)
+	if err != nil {
+		return "", err
+	}
+	return link, nil
 }
 
 func (s *HiddenFS) Lchown(name string, uid, gid int) error {
@@ -375,5 +421,103 @@ func (s *HiddenFS) Lchown(name string, uid, gid int) error {
 		return &os.PathError{Op: "lchown", Path: name, Err: ErrHiddenNotExist}
 	}
 
-	return s.base.Lchown(name, uid, gid)
+	err = s.base.Lchown(name, uid, gid)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func isParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
+	if len(hiddenPaths) == 0 {
+		return false, nil
+	}
+
+	// file normalization allows to use a single filepath separator
+	name = filepath.Clean(filepath.FromSlash(name))
+
+	for _, hiddenDir := range hiddenPaths {
+		isParentOfHiddenDir, err := dirContains(name, hiddenDir)
+		if err != nil {
+			return false, err
+		}
+		if isParentOfHiddenDir {
+			return true, nil
+		}
+
+	}
+	return false, nil
+}
+
+const relParent = ".." + string(os.PathSeparator)
+
+func dirContains(parent, subdir string) (bool, error) {
+	relPath, err := filepath.Rel(parent, subdir)
+	if err != nil {
+		return false, err
+	}
+	relPath = filepath.FromSlash(relPath)
+
+	isSameDir := relPath == "."
+	outsideOfparentDir := strings.HasPrefix(relPath, relParent) || relPath == ".."
+
+	return !isSameDir && !outsideOfparentDir, nil
+}
+
+func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
+	relPath, err = filepath.Rel(hiddenDir, name)
+	if err != nil {
+		return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
+	}
+
+	relPath = filepath.FromSlash(relPath)
+
+	// no ../ prefix
+	// -> does not lie outside of hidden dir
+	outsideOfHiddenDir := strings.HasPrefix(relPath, relParent)
+	isParentDir := relPath == ".."
+	isHiddenDir := relPath == "."
+
+	if !isHiddenDir && (outsideOfHiddenDir || isParentDir) {
+		return relPath, false, nil
+	}
+
+	return relPath, true, nil
+}
+
+// hiddenPaths should be normalized (filepath.Clean result values)
+func isHidden(name string, hiddenPaths []string) (bool, error) {
+	if len(hiddenPaths) == 0 {
+		return false, nil
+	}
+
+	// file normalization allows to use a single filepath separator
+	name = filepath.Clean(filepath.FromSlash(name))
+
+	for _, hiddenDir := range hiddenPaths {
+		_, hidden, err := isInHiddenPath(name, hiddenDir)
+		if err != nil {
+			return false, err
+		}
+		if hidden {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func allFiles(fsys FS, dir string) ([]string, error) {
+	files := make([]string, 0)
+
+	err := Walk(fsys, dir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
 }
