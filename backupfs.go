@@ -520,7 +520,11 @@ func (fsys *BackupFS) tryRemoveBackup(name string) (err error) {
 			}
 		}()
 		// remove file/symlink
-		return fsys.backup.Remove(name)
+		err := fsys.backup.Remove(name)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	dirs := make([]string, 0)
@@ -548,7 +552,11 @@ func (fsys *BackupFS) tryRemoveBackup(name string) (err error) {
 		}
 
 		// delete files
-		return fsys.backup.Remove(path)
+		err = fsys.backup.Remove(path)
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -715,7 +723,11 @@ func (fsys *BackupFS) OpenFile(name string, flag int, perm fs.FileMode) (File, e
 
 	if flag == os.O_RDONLY {
 		// in read only mode the perm is not used.
-		return fsys.base.OpenFile(name, os.O_RDONLY, 0)
+		f, err := fsys.base.OpenFile(name, os.O_RDONLY, 0)
+		if err != nil {
+			return nil, &os.PathError{Op: "open", Path: name, Err: fmt.Errorf("open failed: %w", err)}
+		}
+		return f, nil
 	}
 
 	// not read only opening -> backup
