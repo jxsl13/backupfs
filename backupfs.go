@@ -330,6 +330,12 @@ func (fsys *BackupFS) UnmarshalJSON(data []byte) error {
 
 	fsys.baseInfos = make(map[string]fs.FileInfo, len(fiMap))
 	for k, v := range fiMap {
+		if v == nil {
+			// required, otherwise the value cannot be checked whethe rit's nil or not
+			// due to the additional type information of k, which is of type *fInfo
+			fsys.baseInfos[k] = nil
+			continue
+		}
 		fsys.baseInfos[k] = v
 	}
 
