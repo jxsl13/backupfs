@@ -68,13 +68,7 @@ func (fs *HiddenFS) isParentOfHidden(name string) (bool, error) {
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
 func (s *HiddenFS) Create(name string) (File, error) {
-	hidden, err := s.isHidden(name)
-	if err != nil {
-		return nil, &os.PathError{Op: "create", Path: name, Err: wrapErrHiddenCheckFailed(err)}
-	}
-	if hidden {
-		return nil, &os.PathError{Op: "create", Path: name, Err: ErrHiddenPermission}
-	}
+	// OpenFile already does the hidden checks
 	f, err := s.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: err}
