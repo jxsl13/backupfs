@@ -260,6 +260,24 @@ func (fsys *BackupFS) Map() map[string]fs.FileInfo {
 	return m
 }
 
+func (fsys *BackupFS) SetMap(metadata map[string]fs.FileInfo) {
+
+	// clone state
+	m := make(map[string]fs.FileInfo, len(metadata))
+	for path, info := range metadata {
+		if info == nil {
+			m[path] = nil
+			continue
+		}
+		m[path] = info
+	}
+
+	fsys.mu.Lock()
+	defer fsys.mu.Unlock()
+
+	fsys.baseInfos = m
+}
+
 func toFInfo(path string, fi fs.FileInfo) *fInfo {
 	return &fInfo{
 		FileName:    filepath.ToSlash(path),
