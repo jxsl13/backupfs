@@ -249,12 +249,17 @@ func (fsys *BackupFS) Rollback() error {
 	return nil
 }
 
-func (fsys *BackupFS) Map() map[string]fs.FileInfo {
+func (fsys *BackupFS) Map() (metadata map[string]fs.FileInfo) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
 	m := make(map[string]fs.FileInfo, len(fsys.baseInfos))
 	for path, info := range fsys.baseInfos {
+		if info == nil {
+			m[path] = nil // nil w/o type information is needed here
+			continue
+		}
+
 		m[path] = toFInfo(path, info)
 	}
 	return m
