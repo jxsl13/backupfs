@@ -15,8 +15,13 @@ type byMostFilePathSeparators []string
 func (a byMostFilePathSeparators) Len() int      { return len(a) }
 func (a byMostFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a byMostFilePathSeparators) Less(i, j int) bool {
+	ca := strings.Count(a[i], separator)
+	cb := strings.Count(a[j], separator)
 
-	return strings.Count(a[i], separator) > strings.Count(a[j], separator)
+	if ca == cb {
+		return a[i] < a[j]
+	}
+	return ca > cb
 }
 
 // byLeastFilePathSeparators sorts the string by the number of file path separators
@@ -27,6 +32,11 @@ type byLeastFilePathSeparators []string
 func (a byLeastFilePathSeparators) Len() int      { return len(a) }
 func (a byLeastFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a byLeastFilePathSeparators) Less(i, j int) bool {
+	ca := strings.Count(a[i], separator)
+	cb := strings.Count(a[j], separator)
 
-	return strings.Count(a[i], separator) < strings.Count(a[j], separator)
+	if ca == cb {
+		return a[i] < a[j]
+	}
+	return ca < cb
 }
