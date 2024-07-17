@@ -33,7 +33,7 @@ func NewHiddenFS(base FS, hiddenPaths ...string) *HiddenFS {
 		normalizedHiddenPaths = append(normalizedHiddenPaths, filepath.Clean(filepath.FromSlash(p)))
 	}
 
-	sort.Sort(byMostFilePathSeparators(normalizedHiddenPaths))
+	sort.Sort(ByMostFilePathSeparators(normalizedHiddenPaths))
 	return &HiddenFS{
 		base:        base,
 		hiddenPaths: normalizedHiddenPaths,
@@ -216,7 +216,7 @@ func (s *HiddenFS) RemoveAll(name string) error {
 
 	// sort dirs from most nested to least nested
 	// th this point all of th enon-hidden directories MUST not contain any files
-	sort.Sort(byMostFilePathSeparators(dirList))
+	sort.Sort(ByMostFilePathSeparators(dirList))
 	for _, dir := range dirList {
 		containsHidden, err := s.isParentOfHidden(dir)
 		if err != nil {

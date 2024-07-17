@@ -15,15 +15,9 @@ var (
 	errFileInfoExpected    = errors.New("expecting a file file-info")
 
 	// internal package does not expose these errors
-	errCopyFileFailed     = errors.New("failed to copy file")
-	errWrapCopyFileFailed = func(err error) error {
-		return fmt.Errorf("%w: %v", errCopyFileFailed, err)
-	}
-
+	errCopyFileFailed    = errors.New("failed to copy file")
 	errCopyDirFailed     = errors.New("failed to copy directory")
-	errWrapCopyDirFailed = func(err error) error {
-		return fmt.Errorf("%w: %v", errCopyDirFailed, err)
-	}
+	errCopySymlinkFailed = errors.New("failed to copy symlink")
 )
 
 // / -> /a -> /a/b -> /a/b/c -> /a/b/c/d
@@ -98,21 +92,27 @@ func ignoreChtimesError(err error) error {
 	}
 }
 
-func copyDir(fs FS, name string, info fs.FileInfo) error {
+func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%w: %s: %v", errCopyDirFailed, name, err)
+		}
+	}()
+
 	if !info.IsDir() {
 		return fmt.Errorf("%w: %s", errDirInfoExpected, name)
 	}
 
 	// try to create all dirs as somone might have tempered with the file system
 	targetMode := info.Mode()
-	err := fs.MkdirAll(name, targetMode.Perm())
+	err = fs.MkdirAll(name, targetMode.Perm())
 	if err != nil {
 		return err
 	}
 
 	newDirInfo, err := fs.Lstat(name)
 	if err != nil {
-		return errWrapCopyDirFailed(err)
+		return fmt.Errorf("%w: %v", errCopyDirFailed, err)
 	}
 
 	currentMode := newDirInfo.Mode()
@@ -144,7 +144,13 @@ func copyDir(fs FS, name string, info fs.FileInfo) error {
 	return nil
 }
 
-func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) error {
+func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%w: %s: %v", errCopyFileFailed, name, err)
+		}
+	}()
+
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: %s", errFileInfoExpected, name)
 	}
@@ -154,29 +160,29 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) error {
 	// same as create but with custom permissions
 	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, targetMode.Perm())
 	if err != nil {
-		return errWrapCopyFileFailed(err)
+		return err
 	}
 
 	_, err = io.Copy(file, sourceFile)
 	if err != nil {
-		return errWrapCopyFileFailed(err)
+		return err
 	}
 
 	err = file.Close()
 	if err != nil {
-		return errWrapCopyFileFailed(err)
+		return err
 	}
 
 	newFileInfo, err := fs.Lstat(name)
 	if err != nil {
-		return errWrapCopyFileFailed(err)
+		return err
 	}
 
 	if !equalMode(newFileInfo.Mode(), targetMode) {
 		// not equal, update it
 		err = fs.Chmod(name, targetMode)
 		if err != nil {
-			return errWrapCopyFileFailed(err)
+			return err
 		}
 	}
 
@@ -186,7 +192,7 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) error {
 	if !currentModTime.Equal(targetModTime) {
 		err = ignoreChtimesError(fs.Chtimes(name, targetModTime, targetModTime))
 		if err != nil {
-			return errWrapCopyFileFailed(err)
+			return err
 		}
 	}
 
@@ -195,13 +201,18 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) error {
 	// permission and not implemented errors are ignored
 	err = ignoreChownError(chown(info, name, fs))
 	if err != nil {
-		return errWrapCopyFileFailed(err)
+		return err
 	}
 
 	return nil
 }
 
-func copySymlink(source, target FS, name string, info fs.FileInfo) error {
+func copySymlink(source, target FS, name string, info fs.FileInfo) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%w: %s: %v", errCopySymlinkFailed, name, err)
+		}
+	}()
 
 	if info.Mode()&os.ModeType&os.ModeSymlink == 0 {
 		return fmt.Errorf("%w: %s", errSymlinkInfoExpected, name)
@@ -245,7 +256,12 @@ func chown(from fs.FileInfo, toName string, fs FS) error {
 	return nil
 }
 
-func restoreFile(name string, backupFi fs.FileInfo, base, backup FS) error {
+func restoreFile(name string, backupFi fs.FileInfo, base, backup FS) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to restore file: %s: %w", name, err)
+		}
+	}()
 	f, err := backup.Open(name)
 	if err != nil {
 		// best effort, if backup was tempered with, we cannot restore the file.
@@ -285,7 +301,13 @@ func restoreFile(name string, backupFi fs.FileInfo, base, backup FS) error {
 	return nil
 }
 
-func restoreSymlink(name string, backupFi fs.FileInfo, base, backup FS) error {
+func restoreSymlink(name string, backupFi fs.FileInfo, base, backup FS) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to restore symlink: %s: %w", name, err)
+		}
+	}()
+
 	exists, err := lExists(backup, name)
 	if err != nil || !exists {
 		// best effort, if backup broken, we cannot restore

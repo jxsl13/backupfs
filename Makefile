@@ -18,6 +18,13 @@ fuzz_hiddenfs_create:
 fuzz_hiddenfs_remove_all:
 	go clean -testcache && go test -fuzz=FuzzHiddenFSRemoveAll -race -fuzztime=300s
 
+fuzz_sort_by_most:
+	go clean -testcache && go test -fuzz=FuzzSortByMostFilePathSeparators -race -fuzztime=300s
+
+fuzz_sort_by_least:
+	go clean -testcache && go test -fuzz=FuzzSortByLeastFilePathSeparators -race -fuzztime=300s
+
+
 fmt:
 	go fmt ./...
 

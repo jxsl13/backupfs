@@ -119,28 +119,44 @@ func (fsys *BackupFS) Name() string {
 // modification on the backup site are skipped
 // This is a heavy weight operation which blocks the file system
 // until the rollback is done.
-func (fsys *BackupFS) Rollback() error {
+func (fsys *BackupFS) Rollback() (multiErr error) {
+	defer func() {
+		if multiErr != nil {
+			multiErr = errors.Join(ErrRollbackFailed, multiErr)
+		}
+	}()
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	// these file sneed to be removed in a certain order, so we keep track of them
-	// from most nested to least nested files
-	removeBaseFiles := make([]string, 0, 1)
+	var (
+		// these file sneed to be removed in a certain order, so we keep track of them
+		// from most nested to least nested files
+		// can be any file type, dir, file, symlink
+		removeBasePaths = make([]string, 0, 1)
 
-	// these files also need to be restored in a certain order
-	// from least nested to most nested
-	restoreDirPaths := make([]string, 0, 4)
-	restoreFilePaths := make([]string, 0, 4)
-	restoreSymlinkPaths := make([]string, 0, 4)
+		// these files also need to be restored in a certain order
+		// from least nested to most nested
+		restoreDirPaths     = make([]string, 0, 4)
+		restoreFilePaths    = make([]string, 0, 4)
+		restoreSymlinkPaths = make([]string, 0, 4)
+
+		err    error
+		exists bool
+	)
 
 	for path, info := range fsys.baseInfos {
 		if info == nil {
 			// file did not exist in the base filesystem at the point of
 			// filesystem modification.
-			exists, err := lExists(fsys.base, path)
-			if err == nil && exists {
+			exists, err = lExists(fsys.base, path)
+			if err != nil {
+				multiErr = errors.Join(multiErr, fmt.Errorf("failed to check whether file %s exists in base filesystem: %w", path, err))
+				continue
+			}
+
+			if exists {
 				// we will need to delete this file
-				removeBaseFiles = append(removeBaseFiles, path)
+				removeBasePaths = append(removeBasePaths, path)
 			}
 
 			// case where file must be removed in base file system
@@ -161,43 +177,131 @@ func (fsys *BackupFS) Rollback() error {
 		}
 	}
 
+	err = fsys.tryRemoveBasePaths(removeBasePaths)
+	if err != nil {
+		multiErr = errors.Join(err)
+	}
+
+	err = fsys.tryRestoreDirPaths(restoreDirPaths)
+	if err != nil {
+		multiErr = errors.Join(multiErr, err)
+	}
+
+	err = fsys.tryRestoreFilePaths(restoreFilePaths)
+	if err != nil {
+		multiErr = errors.Join(multiErr, err)
+	}
+
+	err = fsys.tryRestoreSymlinkPaths(restoreSymlinkPaths)
+	if err != nil {
+		multiErr = errors.Join(multiErr, err)
+	}
+
+	// TODO: make this optional?: whether to delete the backup upon rollback
+
+	// at this point we were able to restore all of the files
+	// now we need to delete our backup
+	err = fsys.tryRemoveBackupPaths("symlink", restoreSymlinkPaths)
+	if err != nil {
+		multiErr = errors.Join(multiErr, err)
+	}
+
+	// delete files before directories in order for directories to be empty
+	err = fsys.tryRemoveBackupPaths("file", restoreFilePaths)
+	if err != nil {
+		multiErr = errors.Join(multiErr, err)
+	}
+
+	// best effort deletion of backup files
+	// so we ignore the error
+	// we only delete directories that we did create.
+	// any user created content in directories is not touched
+
+	err = fsys.tryRemoveBackupPaths("directory", restoreDirPaths)
+	if err != nil {
+		multiErr = errors.Join(multiErr, err)
+	}
+
+	// in case of a multiError we are not able to restore the previous state anyway
+	// that is why we continue here to finish the rollback but at the same time inform
+	// the user about potential errors along the way.
+
+	// at this point we have successfully restored our backup and
+	// removed all of the backup files and directories
+
+	// now we can reset the internal data structure for book keeping of filesystem modifications
+	fsys.baseInfos = make(map[string]fs.FileInfo)
+	return multiErr
+}
+
+func (fsys *BackupFS) tryRemoveBasePaths(removeBasePaths []string) (multiErr error) {
+	var err error
 	// remove files from most nested to least nested
-	sort.Sort(byMostFilePathSeparators(removeBaseFiles))
-	for _, remPath := range removeBaseFiles {
+	sort.Sort(ByMostFilePathSeparators(removeBasePaths))
+	for _, remPath := range removeBasePaths {
 		// remove all files that were not there before the backup.
 		// ignore error, as this is a best effort restoration.
-		_ = fsys.base.Remove(remPath)
+		// folders and files did not exist in the first place
+		err = fsys.base.Remove(remPath)
+		if err != nil {
+			multiErr = errors.Join(multiErr, fmt.Errorf("failed to remove path in base filesystem %s: %w", remPath, err))
+		}
 	}
+	return multiErr
+}
 
+func (fsys *BackupFS) tryRemoveBackupPaths(fileType string, removeBackupPaths []string) (multiErr error) {
+	var (
+		err   error
+		found bool
+	)
+
+	// remove files from most nested to least nested
+	sort.Sort(ByMostFilePathSeparators(removeBackupPaths))
+	for _, remPath := range removeBackupPaths {
+		found, err = lExists(fsys.backup, remPath)
+		if err != nil {
+			multiErr = errors.Join(multiErr, fmt.Errorf("failed to check whether %s exists in backup filesystem %s: %w", fileType, remPath, err))
+			continue
+		}
+
+		if !found {
+			// nothing to remove
+			continue
+		}
+
+		// remove all files that were not there before the backup.
+		// WARNING: do not change this to RemoveAll, as we do not want to renove user created content
+		// in directories
+		err = fsys.backup.Remove(remPath)
+		if err != nil {
+			multiErr = errors.Join(multiErr, fmt.Errorf("failed to remove %s in backup filesystem %s: %w", fileType, remPath, err))
+		}
+	}
+	return multiErr
+}
+
+func (fsys *BackupFS) tryRestoreDirPaths(restoreDirPaths []string) (multiErr error) {
 	// in order to iterate over parent directories before child directories
-	sort.Sort(byLeastFilePathSeparators(restoreDirPaths))
-
+	sort.Sort(ByLeastFilePathSeparators(restoreDirPaths))
+	var err error
 	for _, dirPath := range restoreDirPaths {
 		// backup -> base filesystem
-		err := copyDir(fsys.base, dirPath, fsys.baseInfos[dirPath])
+		err = copyDir(fsys.base, dirPath, fsys.baseInfos[dirPath])
 		if err != nil {
-			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
+			multiErr = errors.Join(multiErr, err)
 		}
 	}
+	return multiErr
+}
 
-	// in this case it does not matter whether we sort the file paths or not
-	// we prefer to sort them in order to see potential errors better
-	sort.Strings(restoreFilePaths)
-
-	for _, filePath := range restoreFilePaths {
-		err := restoreFile(filePath, fsys.baseInfos[filePath], fsys.base, fsys.backup)
-		if err != nil {
-			// in this case it might make sense to retry the rollback
-			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
-		}
-	}
-
+func (fsys *BackupFS) tryRestoreSymlinkPaths(restoreSymlinkPaths []string) (multiErr error) {
 	// in this case it does not matter whether we sort the symlink paths or not
 	// we prefer to sort them in order to see potential errors better
 	sort.Strings(restoreSymlinkPaths)
-	restoredSymlinks := make([]string, 0, 4)
+	var err error
 	for _, symlinkPath := range restoreSymlinkPaths {
-		err := restoreSymlink(
+		err = restoreSymlink(
 			symlinkPath,
 			fsys.baseInfos[symlinkPath],
 			fsys.base,
@@ -205,48 +309,27 @@ func (fsys *BackupFS) Rollback() error {
 		)
 		if err != nil {
 			// in this case it might make sense to retry the rollback
-			return fmt.Errorf("%w: %v", ErrRollbackFailed, err)
+			multiErr = errors.Join(multiErr, err)
 		}
-		restoredSymlinks = append(restoredSymlinks, symlinkPath)
 	}
 
-	// TODO: make this optional?: whether to delete the backup upon rollback
+	return multiErr
+}
 
-	// at this point we were able to restore all of the files
-	// now we need to delete our backup
-
-	for _, symlinkPath := range restoredSymlinks {
-		// best effort deletion of backup files
-		// so we ignore the error
-		_ = fsys.backup.Remove(symlinkPath)
-	}
-
-	// delete all files first
+func (fsys *BackupFS) tryRestoreFilePaths(restoreFilePaths []string) (multiErr error) {
+	// in this case it does not matter whether we sort the file paths or not
+	// we prefer to sort them in order to see potential errors better
+	sort.Strings(restoreFilePaths)
+	var err error
 	for _, filePath := range restoreFilePaths {
-		// best effort deletion of backup files
-		// so we ignore the error
-		_ = fsys.backup.Remove(filePath)
+		err = restoreFile(filePath, fsys.baseInfos[filePath], fsys.base, fsys.backup)
+		if err != nil {
+			// in this case it might make sense to retry the rollback
+			multiErr = errors.Join(multiErr, err)
+		}
 	}
 
-	// we want to delete all of the backed up folders from
-	// the most nested child directories to the least nested parent directories.
-	sort.Sort(byMostFilePathSeparators(restoreDirPaths))
-
-	// delete all files first
-	for _, dirPath := range restoreDirPaths {
-		// best effort deletion of backup files
-		// so we ignore the error
-		// we only delete directories that we did create.
-		// any user created content in directories is not touched
-		_ = fsys.backup.Remove(dirPath)
-	}
-
-	// at this point we have successfully restored our backup and
-	// removed all of the backup files and directories
-
-	// now we can reset the internal data structure for book keeping of filesystem modifications
-	fsys.baseInfos = make(map[string]fs.FileInfo)
-	return nil
+	return multiErr
 }
 
 func (fsys *BackupFS) Map() (metadata map[string]fs.FileInfo) {
@@ -605,7 +688,7 @@ func (fsys *BackupFS) tryRemoveBackup(name string) (err error) {
 		return err
 	}
 
-	sort.Sort(byMostFilePathSeparators(dirs))
+	sort.Sort(ByMostFilePathSeparators(dirs))
 
 	for _, dir := range dirs {
 		err = fsys.backup.RemoveAll(dir)
@@ -855,7 +938,7 @@ func (fsys *BackupFS) RemoveAll(name string) error {
 	// after deleting all of the files
 	//now we want to sort all of the file paths from the most
 	//nested file to the least nested file (count file path separators)
-	sort.Sort(byMostFilePathSeparators(directoryPaths))
+	sort.Sort(ByMostFilePathSeparators(directoryPaths))
 
 	for _, path := range directoryPaths {
 		err = fsys.Remove(path)
