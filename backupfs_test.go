@@ -738,6 +738,115 @@ func NewTestBackupFS(basePrefix, backupPrefix string) (root, base, backup FS, ba
 	return root, base, backup, backupFS
 }
 
+func TestCreateFileInSymlinkDir(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalLinkedDir   = "/usr/lib"
+		originalSubDir      = path.Join(originalLinkedDir, "/systemd/system")
+		originalFilePath    = path.Join(originalSubDir, "test.txt")
+		originalFileContent = "test_content"
+		symlinkDir          = "/lib"
+		symlinkSubDir       = path.Join(symlinkDir, "/systemd/system")
+		symlinkFilePath     = path.Join(symlinkSubDir, "test.txt")
+
+		updatedFileContent = "updated_content"
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createSymlink(t, base, originalLinkedDir, symlinkDir)
+	createFile(t, base, originalFilePath, originalFileContent)
+	baseFsState := createFSState(t, base, "/")
+	backupFsState := createFSState(t, backup, "/")
+
+	// try creating the directory tree ober a symlinked folder
+	createFile(t, backupFS, symlinkFilePath, updatedFileContent)
+
+	err := backupFS.Rollback()
+	require.NoError(t, err)
+
+	mustEqualFSState(t, baseFsState, base, "/")
+	mustEqualFSState(t, backupFsState, backup, "/")
+}
+
+func TestMkdirInSymlinkDir(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalLinkedDir   = "/usr/lib"
+		originalSubDir      = path.Join(originalLinkedDir, "/systemd/system")
+		originalFilePath    = path.Join(originalSubDir, "test.txt")
+		originalFileContent = "test_content"
+		symlinkDir          = "/lib"
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createSymlink(t, base, originalLinkedDir, symlinkDir)
+	createFile(t, base, originalFilePath, originalFileContent)
+	baseFsState := createFSState(t, base, "/")
+	backupFsState := createFSState(t, backup, "/")
+
+	// try creating the directory tree ober a symlinked folder
+	mkdir(t, backupFS, filepath.Join(symlinkDir, "test_dir"), 0755)
+
+	err := backupFS.Rollback()
+	require.NoError(t, err)
+
+	mustEqualFSState(t, baseFsState, base, "/")
+	mustEqualFSState(t, backupFsState, backup, "/")
+}
+
+func TestRemoveDirInSymlinkDir(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalLinkedDir   = "/usr/lib"
+		originalSubDir      = path.Join(originalLinkedDir, "/systemd/system")
+		originalFilePath    = path.Join(originalSubDir, "test.txt")
+		originalFileContent = "test_content"
+		symlinkDir          = "/lib"
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createSymlink(t, base, originalLinkedDir, symlinkDir)
+	createFile(t, base, originalFilePath, originalFileContent)
+	baseFsState := createFSState(t, base, "/")
+	backupFsState := createFSState(t, backup, "/")
+
+	// try creating the directory tree ober a symlinked folder
+	removeAll(t, backupFS, filepath.Join(symlinkDir, "systemd"))
+
+	err := backupFS.Rollback()
+	require.NoError(t, err)
+
+	mustEqualFSState(t, baseFsState, base, "/")
+	mustEqualFSState(t, backupFsState, backup, "/")
+}
+
 func CallerPathTmp(up ...int) string {
 	caller := 1
 	if len(up) > 0 {
