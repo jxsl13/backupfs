@@ -116,7 +116,7 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	newpath = filepath.Clean(newpath)
 
 	dirPath := filepath.Dir(oldpath)
-	found, err := exists(fsys, dirPath)
+	found, err := exists(fsys, toAbsSymlink(oldpath, newpath))
 	require.NoError(err)
 
 	if !found {
@@ -144,7 +144,7 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	require.True(hasSymlinkFlag, "the target(newpath) symlink does not have the symlink flag set: ", newpath)
 
 	// check oldpath after creating the symlink
-	fi, err = fsys.Lstat(oldpath)
+	fi, err = fsys.Lstat(toAbsSymlink(oldpath, newpath))
 	switch {
 	case err == nil:
 		hasSymlinkFlag = fi.Mode()&os.ModeType&os.ModeSymlink != 0
@@ -288,4 +288,72 @@ func countFiles(t *testing.T, fsys FS, path string, expectedFilesAndDirs int) {
 	sort.Strings(files)
 
 	require.Equalf(expectedFilesAndDirs, len(files), "files: %v", files)
+}
+
+func createFSState(t *testing.T, fsys FS, entrypoint string) []pathState {
+	state, err := newFSState(fsys, entrypoint)
+	require.NoError(t, err)
+	return state
+}
+
+func mustEqualFSState(t *testing.T, before []pathState, fsys FS, entrypoint string) {
+	after := createFSState(t, fsys, entrypoint)
+	require.Equal(t, before, after)
+}
+
+func newFSState(fsys FS, entrypoint string) ([]pathState, error) {
+	var paths []pathState
+	err := Walk(fsys, entrypoint, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		content := ""
+		if info.Mode().IsRegular() {
+			f, err := fsys.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			b, err := io.ReadAll(f)
+			if err != nil {
+				return err
+			}
+			content = string(b)
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			content, err = fsys.Readlink(path)
+			if err != nil {
+				return err
+			}
+		}
+
+		paths = append(paths, pathState{
+			Path:    path,
+			Name:    info.Name(),
+			Size:    info.Size(),
+			Mode:    info.Mode(),
+			Content: content,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Sort(byPathStateLeastFilePathSeparators(paths))
+	return paths, nil
+}
+
+type pathState struct {
+	Path    string
+	Name    string
+	Size    int64
+	Mode    fs.FileMode
+	Content string
+}
+
+type byPathStateLeastFilePathSeparators []pathState
+
+func (a byPathStateLeastFilePathSeparators) Len() int      { return len(a) }
+func (a byPathStateLeastFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a byPathStateLeastFilePathSeparators) Less(i, j int) bool {
+	return LessFilePathSeparators(a[i].Path, a[j].Path)
 }
