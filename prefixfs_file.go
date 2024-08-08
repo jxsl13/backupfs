@@ -7,15 +7,36 @@ import (
 
 var _ File = (*prefixFile)(nil)
 
+// filePath and prefix are expected to be normalized (filepath.Clean) paths
+func newPrefixFile(f File, filePath, prefix string) File {
+	var (
+		nameOverride = ""
+		baseName     = f.Name()
+	)
+
+	if filePath == prefix {
+		nameOverride = separator
+	} else if prefix != "" && strings.HasPrefix(baseName, prefix) {
+		nameOverride = strings.TrimPrefix(baseName, prefix)
+	}
+
+	return &prefixFile{
+		f:            f,
+		nameOverride: nameOverride,
+	}
+}
+
 type prefixFile struct {
-	f File
-	// this prefix is clean due to th eFS prefix being clean
-	prefix string
+	f            File
+	nameOverride string
 }
 
 func (pf *prefixFile) Name() string {
 	// hide the existence of the prefix
-	return strings.TrimPrefix(pf.f.Name(), pf.prefix)
+	if pf.nameOverride != "" {
+		return pf.nameOverride
+	}
+	return pf.f.Name()
 }
 func (pf *prefixFile) Readdir(count int) ([]fs.FileInfo, error) {
 	return pf.f.Readdir(count)

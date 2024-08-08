@@ -3,7 +3,6 @@ package backupfs
 import (
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -64,7 +63,7 @@ func (s *PrefixFS) Create(name string) (File, error) {
 		return nil, err
 	}
 
-	return &prefixFile{f: f, prefix: s.prefix}, nil
+	return newPrefixFile(f, path, s.prefix), nil
 }
 
 // Mkdir creates a directory in the filesystem, return an error if any
@@ -109,7 +108,7 @@ func (s *PrefixFS) Open(name string) (File, error) {
 		return nil, err
 	}
 
-	return &prefixFile{f: f, prefix: s.prefix}, nil
+	return newPrefixFile(f, path, s.prefix), nil
 }
 
 // OpenFile opens a file using the given flags and the given mode.
@@ -124,7 +123,7 @@ func (s *PrefixFS) OpenFile(name string, flag int, perm fs.FileMode) (File, erro
 		return nil, err
 	}
 
-	return &prefixFile{f: f, prefix: s.prefix}, nil
+	return newPrefixFile(f, path, s.prefix), nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
@@ -187,7 +186,7 @@ func (s *PrefixFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 
-	return newPrefixFileInfo(fi, s.prefix), nil
+	return newPrefixFileInfo(fi, path, s.prefix), nil
 }
 
 // The name of this FileSystem
@@ -249,7 +248,7 @@ func (s *PrefixFS) Lstat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newPrefixFileInfo(fi, s.prefix), nil
+	return newPrefixFileInfo(fi, path, s.prefix), nil
 }
 
 // Symlink changes the access and modification times of the named file
@@ -260,7 +259,7 @@ func (s *PrefixFS) Symlink(oldname, newname string) error {
 		err     error
 		oldPath string
 	)
-	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(filepath.FromSlash(oldname)) {
+	if isAbs(oldname) {
 		// absolute path symlink
 		oldPath, err = s.prefixPath(oldname)
 	} else {

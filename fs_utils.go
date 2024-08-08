@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 )
 
@@ -363,4 +364,30 @@ func equalMode(a, b fs.FileMode) bool {
 	b &= chmodBits
 
 	return a == b
+}
+
+// toAbsSymlink always returns the absolute path to a symlink.
+// newname is the symlink location, oldname is the location that
+// the symlink is supposed point at. If oldname is a relative path,
+// then the absolute path is calculated and returned instead.
+func toAbsSymlink(oldname, newname string) (string, error) {
+	if !isAbs(oldname) {
+		return filepath.Join(filepath.Dir(newname), oldname), nil
+	}
+	return oldname, nil
+}
+
+// toRelSymlink always returns the relative path to a symlink.
+// newname is the symlink location, oldname is the location that
+// the symlink is supposed point at. If oldname is an absolute path,
+// then the relative path is calculated and returned instead.
+func toRelSymlink(oldname, newname string) (string, error) {
+	if isAbs(oldname) {
+		return filepath.Rel(filepath.Dir(newname), oldname)
+	}
+	return oldname, nil
+}
+
+func isAbs(name string) bool {
+	return path.IsAbs(filepath.ToSlash(name)) || filepath.IsAbs(filepath.FromSlash(name))
 }
