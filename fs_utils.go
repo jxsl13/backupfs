@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -22,8 +23,8 @@ var (
 )
 
 // / -> /a -> /a/b -> /a/b/c -> /a/b/c/d
+// IterateDirTree does not clean the passed file name.
 func IterateDirTree(name string, visitor func(string) (proceed bool, err error)) (aborted bool, err error) {
-	name = filepath.Clean(name)
 
 	var (
 		create    = false
@@ -31,14 +32,11 @@ func IterateDirTree(name string, visitor func(string) (proceed bool, err error))
 		proceed   = true
 	)
 	for i, r := range name {
-		if i == 0 && r == filepath.Separator {
-			continue
-		}
 		create = false
 
-		if r == '/' {
+		if r == '/' || r == filepath.Separator {
 			create = true
-			lastIndex = i
+			lastIndex = max(i, 1) // root element should be visible
 		}
 		if i == len(name)-1 {
 			create = true
@@ -370,11 +368,11 @@ func equalMode(a, b fs.FileMode) bool {
 // newname is the symlink location, oldname is the location that
 // the symlink is supposed point at. If oldname is a relative path,
 // then the absolute path is calculated and returned instead.
-func toAbsSymlink(oldname, newname string) (string, error) {
+func toAbsSymlink(oldname, newname string) string {
 	if !isAbs(oldname) {
-		return filepath.Join(filepath.Dir(newname), oldname), nil
+		return filepath.Join(filepath.Dir(newname), oldname)
 	}
-	return oldname, nil
+	return oldname
 }
 
 // toRelSymlink always returns the relative path to a symlink.
@@ -390,4 +388,128 @@ func toRelSymlink(oldname, newname string) (string, error) {
 
 func isAbs(name string) bool {
 	return path.IsAbs(filepath.ToSlash(name)) || filepath.IsAbs(filepath.FromSlash(name))
+}
+
+// resolvePath resolves a path that contains symlinks.
+// The returned path is the resolved path.
+// In case that the returned path is not equal to the path that was passed to this function
+// then there was a symlink somewhere along the way to that file or directory.
+func resolvePath(fsys FS, filePath string) (resolvedFilePath string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to resolve path: %s: %w", filePath, err)
+		}
+	}()
+
+	if filePath == "" {
+		return "", errors.New("empty file path")
+	}
+
+	accPaths := make([]string, 0, strings.Count(filePath, separator))
+	// collect all subdir segmrents
+	_, _ = IterateDirTree(filePath, func(subdirPath string) (bool, error) {
+		accPaths = append(accPaths, subdirPath)
+		return true, nil
+	})
+
+	for i, p := range accPaths {
+		// iterate over all accumulated path segments /a -> /a/b  -> /a/b/c.txt etc.
+		fi, err := fsys.Lstat(p)
+		if err != nil {
+			return "", err
+		}
+
+		// check if symlink
+		if fi.Mode()&os.ModeSymlink != 0 {
+			// resolve symlink
+			linkedPath, err := fsys.Readlink(p)
+			if err != nil {
+				return "", err
+			}
+			linkedPath = toAbsSymlink(linkedPath, p)
+
+			// update slice in place for all following paths after the symlink
+			restAccPaths := accPaths[i+1:]
+			for j, symPath := range restAccPaths {
+				restAccPaths[j] = filepath.Join(linkedPath, strings.TrimPrefix(symPath, p))
+			}
+		}
+	}
+
+	return accPaths[len(accPaths)-1], nil
+}
+
+func resolvePathWithCache(fsys FS, filePath string, resolvedFileInfos map[string]fs.FileInfo, resolvedPathCache map[string]string) (resolvedPath string, err error) {
+
+	var ok bool
+	if resolvedPath, ok = resolvedPathCache[filePath]; ok {
+		return resolvedPath, nil
+	}
+
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to resolve path: %s: %w", filePath, err)
+		}
+	}()
+
+	if filePath == "" {
+		return "", errors.New("empty file path")
+	}
+
+	accPaths := make([]string, 0, strings.Count(filePath, separator))
+	// collect all subdir segmrents
+	_, _ = IterateDirTree(filePath, func(subdirPath string) (bool, error) {
+		accPaths = append(accPaths, subdirPath)
+		return true, nil
+	})
+
+	var (
+		fi         fs.FileInfo
+		linkedPath string
+	)
+
+	for i, p := range accPaths {
+
+		// skip lstat if file is already known
+		fi, ok = resolvedFileInfos[p]
+		if !ok {
+			// iterate over all accumulated path segments /a -> /a/b  -> /a/b/c.txt etc.
+			fi, err = fsys.Lstat(p)
+			if err != nil {
+				return "", err
+			}
+			resolvedFileInfos[p] = fi
+		}
+
+		// check if symlink
+		if fi.Mode()&os.ModeSymlink != 0 {
+
+			// skip readlink if already known
+			linkedPath, ok = resolvedPathCache[p]
+			if !ok {
+				// resolve symlink
+				linkedPath, err = fsys.Readlink(p)
+				if err != nil {
+					return "", err
+				}
+				linkedPath = toAbsSymlink(linkedPath, p)
+				resolvedPathCache[p] = linkedPath
+			}
+
+			// update slice in place for all following paths after the symlink
+			restAccPaths := accPaths[i+1:]
+			for j, symPath := range restAccPaths {
+				restAccPaths[j] = filepath.Join(linkedPath, strings.TrimPrefix(symPath, p))
+			}
+		} else {
+			resolvedPathCache[p] = p
+		}
+	}
+
+	resolvedPath = accPaths[len(accPaths)-1]
+	if resolvedPath != filePath {
+		resolvedPathCache[filePath] = resolvedPath
+	}
+
+	return resolvedPath, nil
 }
