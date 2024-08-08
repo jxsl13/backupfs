@@ -59,12 +59,11 @@ func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 
 	var (
 		originalLinkedDir   = "/usr/lib"
-		originalSubDir      = path.Join(originalLinkedDir, "/systemd/system")
-		originalFilePath    = path.Join(originalSubDir, "test.txt")
+		originalSubDir      = "/usr/lib/systemd/system"
+		originalFilePath    = "/usr/lib/systemd/system/test.txt"
 		originalFileContent = "test_content"
 		symlinkDir          = "/lib"
-		symlinkSubDir       = path.Join(symlinkDir, "/systemd/system")
-		symlinkFilePath     = path.Join(symlinkSubDir, "test.txt")
+		symlinkFilePath     = "/lib/systemd/system/test.txt"
 	)
 
 	// prepare existing files
@@ -145,6 +144,9 @@ func TestResolvePathWithCacheWithAbsoluteSymlinkTwice(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, originalFilePath, resolvedPath)
 
+	require.Len(t, fiCache, 5)
+	require.Len(t, pathcache, 6)
+
 }
 
 func TestResolvePathWithCacheWithRelativeSymlinkTwice(t *testing.T) {
@@ -184,6 +186,54 @@ func TestResolvePathWithCacheWithRelativeSymlinkTwice(t *testing.T) {
 	resolvedPath, err = resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
 	require.NoError(t, err)
 	require.Equal(t, originalFilePath, resolvedPath)
+
+	require.Len(t, fiCache, 5)
+	require.Len(t, pathcache, 6)
+}
+
+func TestResolvePathWithCacheWithTwoDifferentFiles(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalLinkedDir   = "/usr/lib"
+		originalSubDir      = path.Join(originalLinkedDir, "/systemd/system")
+		originalFilePath    = path.Join(originalSubDir, "test.txt")
+		originalFilePath2   = path.Join(originalSubDir, "test2.txt")
+		originalFileContent = "test_content"
+		symlinkDir          = "/lib"
+		symlinkSubDir       = path.Join(symlinkDir, "/systemd/system")
+		symlinkFilePath     = path.Join(symlinkSubDir, "test.txt")
+		symlinkFilePath2    = path.Join(symlinkSubDir, "test2.txt")
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createSymlink(t, base, "../usr/lib", symlinkDir) // create relative symlink
+	createFile(t, base, originalFilePath, originalFileContent)
+	createFile(t, base, originalFilePath2, originalFileContent)
+
+	var (
+		fiCache   = make(map[string]fs.FileInfo)
+		pathcache = make(map[string]string)
+	)
+
+	resolvedPath, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
+	require.NoError(t, err)
+	require.Equal(t, originalFilePath, resolvedPath)
+
+	resolvedPath, err = resolvePathWithCache(base, symlinkFilePath2, fiCache, pathcache)
+	require.NoError(t, err)
+	require.Equal(t, originalFilePath2, resolvedPath)
+
+	require.Len(t, fiCache, 6)
+	require.Len(t, pathcache, 8)
 }
 
 func TestIterateDirTreeAbsolute(t *testing.T) {

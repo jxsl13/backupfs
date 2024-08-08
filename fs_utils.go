@@ -429,10 +429,7 @@ func resolvePath(fsys FS, filePath string) (resolvedFilePath string, err error) 
 			linkedPath = toAbsSymlink(linkedPath, p)
 
 			// update slice in place for all following paths after the symlink
-			restAccPaths := accPaths[i+1:]
-			for j, symPath := range restAccPaths {
-				restAccPaths[j] = filepath.Join(linkedPath, strings.TrimPrefix(symPath, p))
-			}
+			replacePathPrefix(accPaths[i+1:], p, linkedPath)
 		}
 	}
 
@@ -469,6 +466,17 @@ func resolvePathWithCache(fsys FS, filePath string, resolvedFileInfos map[string
 	)
 
 	for i, p := range accPaths {
+		// skip readlink if already known
+		linkedPath, ok = resolvedPathCache[p]
+		if ok {
+			if linkedPath != p {
+				// update slice in place for all following paths after the symlink
+				replacePathPrefix(accPaths[i+1:], p, linkedPath)
+			}
+			continue
+		}
+
+		// file path not yet resolved
 
 		// skip lstat if file is already known
 		fi, ok = resolvedFileInfos[p]
@@ -497,10 +505,7 @@ func resolvePathWithCache(fsys FS, filePath string, resolvedFileInfos map[string
 			}
 
 			// update slice in place for all following paths after the symlink
-			restAccPaths := accPaths[i+1:]
-			for j, symPath := range restAccPaths {
-				restAccPaths[j] = filepath.Join(linkedPath, strings.TrimPrefix(symPath, p))
-			}
+			replacePathPrefix(accPaths[i+1:], p, linkedPath)
 		} else {
 			resolvedPathCache[p] = p
 		}
@@ -512,4 +517,10 @@ func resolvePathWithCache(fsys FS, filePath string, resolvedFileInfos map[string
 	}
 
 	return resolvedPath, nil
+}
+
+func replacePathPrefix(paths []string, oldPrefix, newPrefix string) {
+	for idx, path := range paths {
+		paths[idx] = filepath.Join(newPrefix, strings.TrimPrefix(path, oldPrefix))
+	}
 }
