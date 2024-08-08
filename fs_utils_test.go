@@ -9,6 +9,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalLinkedDir = "/usr/lib"
+		originalSubDir    = path.Join(originalLinkedDir, "/systemd/system")
+		originalFilePath  = path.Join(originalSubDir, "test.txt")
+		symlinkDir        = "/lib"
+		symlinkSubDir     = path.Join(symlinkDir, "/systemd/system")
+		symlinkFilePath   = path.Join(symlinkSubDir, "test.txt")
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createSymlink(t, base, "../usr/lib", symlinkDir) // create relative symlink
+
+	// resolve file that does not exist
+	resolvedPath, found, err := resolvePath(base, symlinkFilePath)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Equal(t, originalFilePath, resolvedPath)
+}
+
 func TestResolveCircularSymlinkPath(t *testing.T) {
 	t.Parallel()
 
@@ -28,7 +58,8 @@ func TestResolveCircularSymlinkPath(t *testing.T) {
 		symlink2  = "/usr/lib/systemd/system"
 		pointsAt2 = "/usr"
 
-		filePath = "/usr/test.txt"
+		filePath        = "/usr/test.txt"
+		symlinkFilePath = "/lib/systemd/system/test.txt"
 	)
 
 	// prepare existing files
@@ -43,8 +74,10 @@ func TestResolveCircularSymlinkPath(t *testing.T) {
 
 	// there is no real problem of resolving circular symlinks, because the provided path is
 	// limited and has no recursion in itself
-	_, err := resolvePath(base, filePath)
+	resolvedPath, found, err := resolvePath(base, symlinkFilePath)
 	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, filePath, resolvedPath)
 }
 
 func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
@@ -71,8 +104,9 @@ func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 	createSymlink(t, base, originalLinkedDir, symlinkDir) // create absolute symlink
 	createFile(t, base, originalFilePath, originalFileContent)
 
-	resolvedPath, err := resolvePath(base, symlinkFilePath)
+	resolvedPath, found, err := resolvePath(base, symlinkFilePath)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath, resolvedPath)
 }
 
@@ -101,9 +135,79 @@ func TestResolvePathWithRelativeSymlink(t *testing.T) {
 	createSymlink(t, base, "../usr/lib", symlinkDir) // create relative symlink
 	createFile(t, base, originalFilePath, originalFileContent)
 
-	resolvedPath, err := resolvePath(base, symlinkFilePath)
+	resolvedPath, found, err := resolvePath(base, symlinkFilePath)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath, resolvedPath)
+}
+
+func TestResolveFilePathWithRelativeSymlink(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalSubDir      = "/usr/lib/systemd/system"
+		originalFilePath    = "/usr/lib/systemd/system/test.txt"
+		originalFileContent = "test_content"
+		symlinkFile         = "/usr/lib/linked_file"
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createFile(t, base, originalFilePath, originalFileContent)
+	createSymlink(t, base, "../../usr/lib/systemd/system/test.txt", symlinkFile) // create relative symlink
+
+	resolvedPath, found, err := resolvePath(base, symlinkFile)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, originalFilePath, resolvedPath)
+}
+
+func TestResolveFilePathWithCacheWithRelativeSymlink(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalSubDir      = "/usr/lib/systemd/system"
+		originalFilePath    = "/usr/lib/systemd/system/test.txt"
+		originalFileContent = "test_content"
+		symlinkFile         = "/usr/lib/linked_file"
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createFile(t, base, originalFilePath, originalFileContent)
+	createSymlink(t, base, "../../usr/lib/systemd/system/test.txt", symlinkFile) // create relative symlink
+
+	var (
+		fiCache   = make(map[string]fs.FileInfo)
+		pathcache = make(map[string]string)
+	)
+
+	resolvedPath, found, err := resolvePathWithCache(base, symlinkFile, fiCache, pathcache)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, originalFilePath, resolvedPath)
+
+	resolvedPath, found, err = resolvePathWithCache(base, symlinkFile, fiCache, pathcache)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, originalFilePath, resolvedPath)
+
+	require.Len(t, fiCache, 5)
+	require.Len(t, pathcache, 5)
 }
 
 func TestResolvePathWithCacheWithAbsoluteSymlinkTwice(t *testing.T) {
@@ -136,12 +240,14 @@ func TestResolvePathWithCacheWithAbsoluteSymlinkTwice(t *testing.T) {
 		pathcache = make(map[string]string)
 	)
 
-	resolvedPath, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
+	resolvedPath, found, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath, resolvedPath)
 
-	resolvedPath, err = resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
+	resolvedPath, found, err = resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath, resolvedPath)
 
 	require.Len(t, fiCache, 5)
@@ -179,12 +285,14 @@ func TestResolvePathWithCacheWithRelativeSymlinkTwice(t *testing.T) {
 		pathcache = make(map[string]string)
 	)
 
-	resolvedPath, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
+	resolvedPath, found, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath, resolvedPath)
 
-	resolvedPath, err = resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
+	resolvedPath, found, err = resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath, resolvedPath)
 
 	require.Len(t, fiCache, 5)
@@ -224,16 +332,54 @@ func TestResolvePathWithCacheWithTwoDifferentFiles(t *testing.T) {
 		pathcache = make(map[string]string)
 	)
 
-	resolvedPath, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
+	resolvedPath, found, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath, resolvedPath)
 
-	resolvedPath, err = resolvePathWithCache(base, symlinkFilePath2, fiCache, pathcache)
+	resolvedPath, found, err = resolvePathWithCache(base, symlinkFilePath2, fiCache, pathcache)
 	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, originalFilePath2, resolvedPath)
 
 	require.Len(t, fiCache, 6)
 	require.Len(t, pathcache, 8)
+}
+
+func TestResolvePathWithCacheWithFileThatDoentExist(t *testing.T) {
+	t.Parallel()
+
+	var (
+		basePrefix   = "/base"
+		backupPrefix = "/backup"
+	)
+
+	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+
+	var (
+		originalLinkedDir = "/usr/lib"
+		originalSubDir    = path.Join(originalLinkedDir, "/systemd/system")
+		originalFilePath  = path.Join(originalSubDir, "test.txt")
+		symlinkDir        = "/lib"
+		symlinkSubDir     = path.Join(symlinkDir, "/systemd/system")
+		symlinkFilePath   = path.Join(symlinkSubDir, "test.txt")
+	)
+
+	// prepare existing files
+	mkdirAll(t, base, originalSubDir, 0755)
+	createSymlink(t, base, "../usr/lib", symlinkDir) // create relative symlink
+
+	var (
+		fiCache   = make(map[string]fs.FileInfo)
+		pathcache = make(map[string]string)
+	)
+
+	// resolve file that does not exist
+	resolvedPath, found, err := resolvePathWithCache(base, symlinkFilePath, fiCache, pathcache)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Equal(t, originalFilePath, resolvedPath)
+
 }
 
 func TestIterateDirTreeAbsolute(t *testing.T) {
