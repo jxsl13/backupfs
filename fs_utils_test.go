@@ -20,12 +20,10 @@ func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
 	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
 
 	var (
-		originalLinkedDir = "/usr/lib"
-		originalSubDir    = path.Join(originalLinkedDir, "/systemd/system")
-		originalFilePath  = path.Join(originalSubDir, "test.txt")
-		symlinkDir        = "/lib"
-		symlinkSubDir     = path.Join(symlinkDir, "/systemd/system")
-		symlinkFilePath   = path.Join(symlinkSubDir, "test.txt")
+		originalSubDir   = "/usr/lib/systemd/system"
+		originalFilePath = "/usr/lib/systemd/system/test.txt" // file is never created
+		symlinkDir       = "/lib"
+		symlinkFilePath  = "/lib/systemd/system/test.txt"
 	)
 
 	// prepare existing files
@@ -166,7 +164,10 @@ func TestResolveFilePathWithRelativeSymlink(t *testing.T) {
 	resolvedPath, found, err := resolvePath(base, symlinkFile)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, originalFilePath, resolvedPath)
+
+	// the final file is a symlink that points to a different file.
+	// we only want to resolve the path leading to the symlink, not the symlink itself.
+	require.Equal(t, symlinkFile, resolvedPath)
 }
 
 func TestResolveFilePathWithCacheWithRelativeSymlink(t *testing.T) {
@@ -199,15 +200,21 @@ func TestResolveFilePathWithCacheWithRelativeSymlink(t *testing.T) {
 	resolvedPath, found, err := resolvePathWithCache(base, symlinkFile, fiCache, pathcache)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, originalFilePath, resolvedPath)
+
+	// the final file is a symlink that points to a different file.
+	// we only want to resolve the path leading to the symlink, not the symlink itself.
+	require.Equal(t, symlinkFile, resolvedPath)
 
 	resolvedPath, found, err = resolvePathWithCache(base, symlinkFile, fiCache, pathcache)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, originalFilePath, resolvedPath)
 
-	require.Len(t, fiCache, 5)
-	require.Len(t, pathcache, 5)
+	// the final file is a symlink that points to a different file.
+	// we only want to resolve the path leading to the symlink, not the symlink itself.
+	require.Equal(t, symlinkFile, resolvedPath)
+
+	require.Len(t, fiCache, 4)
+	require.Len(t, pathcache, 4)
 }
 
 func TestResolvePathWithCacheWithAbsoluteSymlinkTwice(t *testing.T) {

@@ -395,6 +395,7 @@ func isAbs(name string) bool {
 // The returned path is the resolved path.
 // In case that the returned path is not equal to the path that was passed to this function
 // then there was a symlink somewhere along the way to that file or directory.
+// WARNING: The last element of the path is NOT resolved.
 func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool, err error) {
 	defer func() {
 		if err != nil {
@@ -406,8 +407,7 @@ func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool,
 		return "", false, errors.New("empty file path")
 	}
 
-	// we need one extra space in case that the last path segment is a symlink
-	accPaths := make([]string, 0, strings.Count(filePath, separator)+1)
+	accPaths := make([]string, 0, strings.Count(filePath, separator))
 	// collect all subdir segmrents
 	_, _ = IterateDirTree(filePath, func(subdirPath string) (bool, error) {
 		accPaths = append(accPaths, subdirPath)
@@ -440,29 +440,21 @@ func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool,
 			}
 			linkedPath = toAbsSymlink(linkedPath, p)
 
-			if i == len(accPaths)-1 {
-				accPaths = append(accPaths, linkedPath)
-			} else {
-				// update slice in place for all following paths after the symlink
-				replacePathPrefix(accPaths[i+1:], p, linkedPath)
-			}
+			// update slice in place for all following paths after the symlink
+			replacePathPrefix(accPaths[i+1:], p, linkedPath)
 		}
 	}
 
 	return accPaths[len(accPaths)-1], true, nil
 }
 
+// WARNING: The last element of the path is NOT resolved.
 func resolvePathWithCache(
 	fsys FS,
 	filePath string,
 	resolvedFileInfos map[string]fs.FileInfo,
 	resolvedPathCache map[string]string,
 ) (resolvedPath string, found bool, err error) {
-
-	var ok bool
-	if resolvedPath, ok = resolvedPathCache[filePath]; ok {
-		return resolvedPath, true, nil
-	}
 
 	defer func() {
 		if err != nil {
@@ -474,8 +466,7 @@ func resolvePathWithCache(
 		return "", false, errors.New("empty file path")
 	}
 
-	// we need one extra element in case that the last path segment is a symlink
-	accPaths := make([]string, 0, strings.Count(filePath, separator)+1)
+	accPaths := make([]string, 0, strings.Count(filePath, separator))
 	// collect all subdir segmrents
 	_, _ = IterateDirTree(filePath, func(subdirPath string) (bool, error) {
 		accPaths = append(accPaths, subdirPath)
@@ -483,6 +474,7 @@ func resolvePathWithCache(
 	})
 
 	var (
+		ok         bool
 		fi         fs.FileInfo
 		linkedPath string
 	)
@@ -495,12 +487,8 @@ func resolvePathWithCache(
 		linkedPath, ok = resolvedPathCache[p]
 		if ok {
 			if linkedPath != p {
-				if i == len(accPaths)-1 {
-					accPaths = append(accPaths, linkedPath)
-				} else {
-					// update slice in place for all following paths after the symlink
-					replacePathPrefix(accPaths[i+1:], p, linkedPath)
-				}
+				// update slice in place for all following paths after the symlink
+				replacePathPrefix(accPaths[i+1:], p, linkedPath)
 			}
 			continue
 		}
@@ -548,13 +536,8 @@ func resolvePathWithCache(
 				resolvedPathCache[p] = linkedPath
 			}
 
-			if i == len(accPaths)-1 {
-				// first append to slice, the lstat
-				accPaths = append(accPaths, linkedPath)
-			} else {
-				// update slice in place for all following paths after the symlink
-				replacePathPrefix(accPaths[i+1:], p, linkedPath)
-			}
+			// update slice in place for all following paths after the symlink
+			replacePathPrefix(accPaths[i+1:], p, linkedPath)
 		} else {
 			resolvedPathCache[p] = p
 		}
