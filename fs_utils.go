@@ -308,13 +308,13 @@ func restoreSymlink(name string, backupFi fs.FileInfo, base, backup FS) (err err
 		}
 	}()
 
-	_, exists, err := lExists(backup, name)
+	_, exists, err := lexists(backup, name)
 	if err != nil || !exists {
 		// best effort, if backup broken, we cannot restore
 		return nil
 	}
 
-	_, newFileExists, err := lExists(base, name)
+	_, newFileExists, err := lexists(base, name)
 	if err == nil && newFileExists {
 		// remove dir/symlink/etc and create a new symlink there
 		err = base.RemoveAll(name)
@@ -336,16 +336,16 @@ func exists(fsys FS, path string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if errors.Is(err, fs.ErrNotExist) {
+	if isNotFoundError(err) {
 		return false, nil
 	}
 	return false, err
 }
 
 // Check if a symlin, file or directory exists.
-func lExists(fsys FS, path string) (fs.FileInfo, bool, error) {
+func lexists(fsys FS, path string) (fs.FileInfo, bool, error) {
 	fi, err := fsys.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	if isNotFoundError(err) {
 		return nil, false, nil
 	}
 
@@ -380,15 +380,30 @@ func toAbsSymlink(oldname, newname string) string {
 // newname is the symlink location, oldname is the location that
 // the symlink is supposed point at. If oldname is an absolute path,
 // then the relative path is calculated and returned instead.
-func toRelSymlink(oldname, newname string) (string, error) {
-	if isAbs(oldname) {
-		return filepath.Rel(filepath.Dir(newname), oldname)
-	}
-	return oldname, nil
-}
+//func toRelSymlink(oldname, newname string) (string, error) {
+//	if isAbs(oldname) {
+//		return filepath.Rel(filepath.Dir(newname), oldname)
+//	}
+//	return oldname, nil
+//}
 
 func isAbs(name string) bool {
 	return path.IsAbs(filepath.ToSlash(name)) || filepath.IsAbs(filepath.FromSlash(name))
+}
+
+type resolverFS interface {
+	Lstat(name string) (fs.FileInfo, error)
+	Readlink(name string) (string, error)
+}
+
+func resolvePath(fsys resolverFS, filePath string) (resolvedFilePath string, err error) {
+	resolvedFilePath, _, err = resolvePathWithInfo(fsys, filePath)
+	return resolvedFilePath, err
+}
+
+func resolvePathWithFound(fsys resolverFS, filePath string) (resolvedFilePath string, found bool, err error) {
+	resolvedFilePath, fi, err := resolvePathWithInfo(fsys, filePath)
+	return resolvedFilePath, fi != nil, err
 }
 
 // resolvePath resolves a path that contains symlinks.
@@ -396,7 +411,9 @@ func isAbs(name string) bool {
 // In case that the returned path is not equal to the path that was passed to this function
 // then there was a symlink somewhere along the way to that file or directory.
 // WARNING: The last element of the path is NOT resolved.
-func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool, err error) {
+// Returns the file info of the last unresolved element.
+// In case that the file path was not found, the returned FileInfo is nil.
+func resolvePathWithInfo(fsys resolverFS, filePath string) (resolvedFilePath string, fi fs.FileInfo, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("failed to resolve path: %s: %w", filePath, err)
@@ -404,7 +421,7 @@ func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool,
 	}()
 
 	if filePath == "" {
-		return "", false, errors.New("empty file path")
+		return "", nil, errors.New("empty file path")
 	}
 
 	accPaths := make([]string, 0, strings.Count(filePath, separator))
@@ -419,16 +436,15 @@ func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool,
 		p := accPaths[i]
 
 		// iterate over all accumulated path segments /a -> /a/b  -> /a/b/c.txt etc.
-		fi, err := fsys.Lstat(p)
+		fi, err = fsys.Lstat(p)
 		if err != nil {
 			if isNotFoundError(err) {
 
 				// return current resolved path state even if it was not found
 				// e.g. /a/symlink/test.txt with /a/symlink pointing to /a/folder, then the resolved nam ewill be /a/folder/test.txt
-				return accPaths[len(accPaths)-1], false, nil
+				return accPaths[len(accPaths)-1], nil, nil
 			}
-
-			return "", false, err
+			return "", nil, err
 		}
 
 		// check if symlink
@@ -436,7 +452,7 @@ func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool,
 			// resolve symlink
 			linkedPath, err := fsys.Readlink(p)
 			if err != nil {
-				return "", false, err
+				return "", nil, err
 			}
 			linkedPath = toAbsSymlink(linkedPath, p)
 
@@ -445,110 +461,7 @@ func resolvePath(fsys FS, filePath string) (resolvedFilePath string, found bool,
 		}
 	}
 
-	return accPaths[len(accPaths)-1], true, nil
-}
-
-// WARNING: The last element of the path is NOT resolved.
-func resolvePathWithCache(
-	fsys FS,
-	filePath string,
-	resolvedFileInfos map[string]fs.FileInfo,
-	resolvedPathCache map[string]string,
-) (resolvedPath string, found bool, err error) {
-
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("failed to resolve path: %s: %w", filePath, err)
-		}
-	}()
-
-	if filePath == "" {
-		return "", false, errors.New("empty file path")
-	}
-
-	accPaths := make([]string, 0, strings.Count(filePath, separator))
-	// collect all subdir segmrents
-	_, _ = IterateDirTree(filePath, func(subdirPath string) (bool, error) {
-		accPaths = append(accPaths, subdirPath)
-		return true, nil
-	})
-
-	var (
-		ok         bool
-		fi         fs.FileInfo
-		linkedPath string
-	)
-
-	// do not use range here
-	for i := 0; i < len(accPaths); i++ {
-		p := accPaths[i]
-
-		// skip readlink if already known
-		linkedPath, ok = resolvedPathCache[p]
-		if ok {
-			if linkedPath != p {
-				// update slice in place for all following paths after the symlink
-				replacePathPrefix(accPaths[i+1:], p, linkedPath)
-			}
-			continue
-		}
-
-		// file path not yet resolved
-
-		// skip lstat if file is already known
-		fi, ok = resolvedFileInfos[p]
-		if !ok {
-			// iterate over all accumulated path segments /a -> /a/b  -> /a/b/c.txt etc.
-			fi, err = fsys.Lstat(p)
-			if err != nil {
-				if isNotFoundError(err) {
-					// only update if not already exists
-					_, ok = resolvedFileInfos[p]
-					if !ok {
-						resolvedFileInfos[p] = nil
-					}
-
-					// return current resolved path state even if it was not found
-					// e.g. /a/symlink/test.txt with /a/symlink pointing to /a/folder, then the resolved nam ewill be /a/folder/test.txt
-					return accPaths[len(accPaths)-1], false, nil
-				}
-
-				return "", false, err
-			}
-			resolvedFileInfos[p] = fi
-		} else if fi == nil {
-			// skip lstat because we already know that the file doe snot exist
-			return accPaths[len(accPaths)-1], false, nil
-		}
-
-		// check if symlink
-		if fi.Mode()&os.ModeSymlink != 0 {
-
-			// skip readlink if already known
-			linkedPath, ok = resolvedPathCache[p]
-			if !ok {
-				// resolve symlink
-				linkedPath, err = fsys.Readlink(p)
-				if err != nil {
-					return "", false, err
-				}
-				linkedPath = toAbsSymlink(linkedPath, p)
-				resolvedPathCache[p] = linkedPath
-			}
-
-			// update slice in place for all following paths after the symlink
-			replacePathPrefix(accPaths[i+1:], p, linkedPath)
-		} else {
-			resolvedPathCache[p] = p
-		}
-	}
-
-	resolvedPath = accPaths[len(accPaths)-1]
-	if resolvedPath != filePath {
-		resolvedPathCache[filePath] = resolvedPath
-	}
-
-	return resolvedPath, true, nil
+	return accPaths[len(accPaths)-1], fi, nil
 }
 
 func replacePathPrefix(paths []string, oldPrefix, newPrefix string) {
@@ -558,10 +471,5 @@ func replacePathPrefix(paths []string, oldPrefix, newPrefix string) {
 }
 
 func isNotFoundError(err error) bool {
-	switch {
-	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOENT), errors.Is(err, syscall.ENOTDIR):
-		return true
-	default:
-		return false
-	}
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOTDIR)
 }

@@ -64,7 +64,7 @@ func mustNotLExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	_, found, err := lExists(fsys, path)
+	_, found, err := lexists(fsys, path)
 	require.NoError(err)
 	require.Falsef(found, "path found but should not exist: %s", path)
 }
@@ -82,7 +82,7 @@ func mustLExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	_, found, err := lExists(fsys, path)
+	_, found, err := lexists(fsys, path)
 	require.NoError(err)
 	require.Truef(found, "path not found but should exist: %s", path)
 }
@@ -240,7 +240,7 @@ func mkdir(t *testing.T, fsys FS, path string, perm fs.FileMode) error {
 		return err
 	}
 
-	fi, b, err := lExists(fsys, path)
+	fi, b, err := lexists(fsys, path)
 	require.NoError(err)
 	require.True(b, "directory: ", path, "must exist after it has been created but does not.")
 	require.True(fi.IsDir(), "path: ", path, "is not a directory after it has been created.")
@@ -260,7 +260,7 @@ func chmod(t *testing.T, fsys FS, path string, perm fs.FileMode) {
 	path = filepath.Clean(path)
 	require := require.New(t)
 
-	_, exists, err := lExists(fsys, path)
+	_, exists, err := lexists(fsys, path)
 	require.NoError(err)
 
 	if !exists {
