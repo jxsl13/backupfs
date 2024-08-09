@@ -505,7 +505,7 @@ func TestBackupFS_JSON(t *testing.T) {
 		}
 
 		require.Equal(info.IsDir(), newInfo.IsDir())
-		require.Equal(info.Name(), filepath.ToSlash(newInfo.Name()))
+		require.Equal(info.Name(), filepath.FromSlash(newInfo.Name()))
 		require.Equal(info.Size(), newInfo.Size())
 		require.Equal(info.ModTime().UnixNano(), newInfo.ModTime().UnixNano())
 		require.Equal(info.Mode(), newInfo.Mode())
