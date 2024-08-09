@@ -6,21 +6,36 @@ import (
 	"time"
 )
 
-func newPrefixFileInfo(base fs.FileInfo, prefix string) fs.FileInfo {
+// filePath and prefix are expected to be normalized (filepath.Clean) paths
+func newPrefixFileInfo(base fs.FileInfo, filePath, prefix string) fs.FileInfo {
+	var (
+		nameOverride = ""
+		baseName     = base.Name()
+	)
+
+	if filePath == prefix {
+		nameOverride = separator
+	} else if prefix != "" && strings.HasPrefix(baseName, prefix) {
+		nameOverride = strings.TrimPrefix(baseName, prefix)
+	}
+
 	return &prefixFileInfo{
-		baseFi: base,
-		prefix: prefix,
+		baseFi:       base,
+		nameOverride: nameOverride,
 	}
 }
 
 // A FileInfo describes a file and is returned by Stat.
 type prefixFileInfo struct {
-	baseFi fs.FileInfo
-	prefix string
+	baseFi       fs.FileInfo
+	nameOverride string
 }
 
 func (fi *prefixFileInfo) Name() string {
-	return strings.TrimPrefix(fi.baseFi.Name(), fi.prefix)
+	if fi.nameOverride != "" {
+		return fi.nameOverride
+	}
+	return fi.baseFi.Name()
 }
 func (fi *prefixFileInfo) Size() int64 {
 	return fi.baseFi.Size()

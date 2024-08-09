@@ -3,7 +3,6 @@ package backupfs
 import (
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -14,9 +13,6 @@ import (
 var (
 	_ FS = (*VolumeFS)(nil)
 )
-
-type volumeFile = prefixFile
-type volumeFileInfo = prefixFileInfo
 
 // VolumeFS is specifically designed to prefix absolute paths with a defined volume like C:, D:, E: etc.
 // We want to be able to decide which volume to target on Windows operating systems.
@@ -62,7 +58,7 @@ func (v *VolumeFS) Create(name string) (File, error) {
 		return nil, err
 	}
 
-	return &volumeFile{f: f, prefix: v.volume}, nil // TODO: do we need an own file type
+	return newPrefixFile(f, path, v.volume), nil // TODO: do we need an own file type
 }
 
 // Mkdir creates a directory in the filesystem, return an error if any
@@ -108,7 +104,7 @@ func (v *VolumeFS) Open(name string) (File, error) {
 		return nil, err
 	}
 
-	return &volumeFile{f: f, prefix: v.volume}, nil
+	return newPrefixFile(f, path, v.volume), nil
 }
 
 // OpenFile opens a file using the given flags and the given mode.
@@ -123,7 +119,7 @@ func (v *VolumeFS) OpenFile(name string, flag int, perm fs.FileMode) (File, erro
 		return nil, err
 	}
 
-	return &volumeFile{f: f, prefix: v.volume}, nil
+	return newPrefixFile(f, path, v.volume), nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
@@ -187,7 +183,7 @@ func (v *VolumeFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 
-	return &volumeFileInfo{fi, v.volume}, nil
+	return newPrefixFileInfo(fi, path, v.volume), nil
 }
 
 // The name of this FileSystem
@@ -249,7 +245,7 @@ func (v *VolumeFS) Lstat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newPrefixFileInfo(fi, v.volume), nil
+	return newPrefixFileInfo(fi, path, v.volume), nil
 
 }
 
@@ -261,7 +257,7 @@ func (v *VolumeFS) Symlink(oldname, newname string) error {
 		err     error
 		oldPath string
 	)
-	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(filepath.FromSlash(oldname)) {
+	if isAbs(oldname) {
 		// absolute path symlink
 		oldPath, err = v.prefixPath(oldname)
 	} else {

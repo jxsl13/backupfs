@@ -64,7 +64,7 @@ func mustNotLExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	found, err := lExists(fsys, path)
+	_, found, err := lexists(fsys, path)
 	require.NoError(err)
 	require.Falsef(found, "path found but should not exist: %s", path)
 }
@@ -82,7 +82,7 @@ func mustLExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	found, err := lExists(fsys, path)
+	_, found, err := lexists(fsys, path)
 	require.NoError(err)
 	require.Truef(found, "path not found but should exist: %s", path)
 }
@@ -115,13 +115,16 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	oldpath = filepath.Clean(oldpath)
 	newpath = filepath.Clean(newpath)
 
+	oldpath = toAbsSymlink(oldpath, newpath)
+
+	_, err := exists(fsys, oldpath)
+	require.NoError(err)
+
 	dirPath := filepath.Dir(oldpath)
 	found, err := exists(fsys, dirPath)
 	require.NoError(err)
-
 	if !found {
-		err = fsys.MkdirAll(dirPath, 0755)
-		require.NoError(err)
+		mkdirAll(t, fsys, dirPath, 0755)
 	}
 
 	dirPath = filepath.Dir(newpath)
@@ -129,8 +132,7 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	require.NoError(err)
 
 	if !found {
-		err = fsys.MkdirAll(dirPath, 0755)
-		require.NoError(err)
+		mkdirAll(t, fsys, dirPath, 0755)
 	}
 
 	// check newpath after creating the symlink
@@ -238,9 +240,10 @@ func mkdir(t *testing.T, fsys FS, path string, perm fs.FileMode) error {
 		return err
 	}
 
-	b, err := lExists(fsys, path)
+	fi, b, err := lexists(fsys, path)
 	require.NoError(err)
 	require.True(b, "directory: ", path, "must exist after it has been created but does not.")
+	require.True(fi.IsDir(), "path: ", path, "is not a directory after it has been created.")
 	return nil
 }
 
@@ -257,7 +260,7 @@ func chmod(t *testing.T, fsys FS, path string, perm fs.FileMode) {
 	path = filepath.Clean(path)
 	require := require.New(t)
 
-	exists, err := lExists(fsys, path)
+	_, exists, err := lexists(fsys, path)
 	require.NoError(err)
 
 	if !exists {
@@ -288,4 +291,72 @@ func countFiles(t *testing.T, fsys FS, path string, expectedFilesAndDirs int) {
 	sort.Strings(files)
 
 	require.Equalf(expectedFilesAndDirs, len(files), "files: %v", files)
+}
+
+func createFSState(t *testing.T, fsys FS, entrypoint string) []pathState {
+	state, err := newFSState(fsys, entrypoint)
+	require.NoError(t, err)
+	return state
+}
+
+func mustEqualFSState(t *testing.T, before []pathState, fsys FS, entrypoint string) {
+	after := createFSState(t, fsys, entrypoint)
+	require.Equal(t, before, after)
+}
+
+func newFSState(fsys FS, entrypoint string) ([]pathState, error) {
+	var paths []pathState
+	err := Walk(fsys, entrypoint, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		content := ""
+		if info.Mode().IsRegular() {
+			f, err := fsys.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			b, err := io.ReadAll(f)
+			if err != nil {
+				return err
+			}
+			content = string(b)
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			content, err = fsys.Readlink(path)
+			if err != nil {
+				return err
+			}
+		}
+
+		paths = append(paths, pathState{
+			Path:    path,
+			Name:    info.Name(),
+			Size:    info.Size(),
+			Mode:    info.Mode(),
+			Content: content,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Sort(byPathStateLeastFilePathSeparators(paths))
+	return paths, nil
+}
+
+type pathState struct {
+	Path    string
+	Name    string
+	Size    int64
+	Mode    fs.FileMode
+	Content string
+}
+
+type byPathStateLeastFilePathSeparators []pathState
+
+func (a byPathStateLeastFilePathSeparators) Len() int      { return len(a) }
+func (a byPathStateLeastFilePathSeparators) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a byPathStateLeastFilePathSeparators) Less(i, j int) bool {
+	return LessFilePathSeparators(a[i].Path, a[j].Path)
 }

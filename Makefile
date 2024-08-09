@@ -3,10 +3,10 @@
 .PHONY: test coverage fuzz fmt
 
 test:
-	go clean -testcache && go test ./... -race -timeout 30s
+	go clean -testcache && go test ./... -count=1 -race -timeout 30s
 
 coverage:
-	-go clean -testcache && go test ./... -timeout 30s -race -covermode=atomic -coverprofile=coverage.txt
+	-go clean -testcache && go test ./... -count=1 -timeout 30s -race -covermode=atomic -coverprofile=coverage.txt
 	rm ./coverage.txt
 
 fuzz_prefixfs:
