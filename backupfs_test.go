@@ -21,7 +21,7 @@ func TestBackupFS_Create(t *testing.T) {
 		basePrefix   = "/base"
 		backupPrefix = "/backup"
 	)
-	root, base, _, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
 	defer func() {
 		require.NoError(t, root.RemoveAll("/"))
 	}()
@@ -33,6 +33,9 @@ func TestBackupFS_Create(t *testing.T) {
 		fileContentOverwrittenAgain = fileContentOverwritten + "_again"
 	)
 	createFile(t, base, filePath, fileContent)
+
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
 
 	createFile(t, backupFS, filePath, fileContentOverwritten)
 
@@ -52,6 +55,15 @@ func TestBackupFS_Create(t *testing.T) {
 	createFile(t, backupFS, newFilePath, fileContent)
 	fileMustContainText(t, root, "base"+newFilePath, fileContent)
 	mustNotExist(t, root, "backup"+newFilePath)
+
+	// ROLLBACK
+	err := backupFS.Rollback()
+	require.NoError(t, err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_Name(t *testing.T) {
@@ -70,7 +82,7 @@ func TestBackupFS_OpenFile(t *testing.T) {
 		basePrefix   = "/base"
 		backupPrefix = "/backup"
 	)
-	root, base, _, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
 
 	var (
 		filePath                    = "/test/01/test_01.txt"
@@ -79,6 +91,9 @@ func TestBackupFS_OpenFile(t *testing.T) {
 		fileContentOverwrittenAgain = fileContentOverwritten + "_again"
 	)
 	openFile(t, base, filePath, fileContent, 0755)
+
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
 
 	openFile(t, backupFS, filePath, fileContentOverwritten, 1755)
 
@@ -98,6 +113,15 @@ func TestBackupFS_OpenFile(t *testing.T) {
 	openFile(t, backupFS, newFilePath, fileContent, 0755)
 	fileMustContainText(t, root, "base"+newFilePath, fileContent)
 	mustNotExist(t, root, "backup"+newFilePath)
+
+	// ROLLBACK
+	err := backupFS.Rollback()
+	require.NoError(t, err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_Remove(t *testing.T) {
@@ -107,7 +131,7 @@ func TestBackupFS_Remove(t *testing.T) {
 		basePrefix   = "/base"
 		backupPrefix = "/backup"
 	)
-	root, base, backup, BackupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
 
 	var (
 		filePath    = "/test/01/test_01.txt"
@@ -116,14 +140,26 @@ func TestBackupFS_Remove(t *testing.T) {
 	createFile(t, base, filePath, fileContent)
 	fileMustContainText(t, root, "base"+filePath, fileContent)
 
-	removeFile(t, BackupFS, filePath)
-	mustNotExist(t, BackupFS, filePath)
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
+	removeFile(t, backupFS, filePath)
+	mustNotExist(t, backupFS, filePath)
 
 	mustNotExist(t, base, filePath)
 	mustNotExist(t, root, "base"+filePath)
 
 	mustExist(t, backup, filePath)
 	mustExist(t, root, "backup"+filePath)
+
+	// ROLLBACK
+	err := backupFS.Rollback()
+	require.NoError(t, err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_RemoveAll(t *testing.T) {
@@ -158,6 +194,9 @@ func TestBackupFS_RemoveAll(t *testing.T) {
 	createSymlink(t, base, fileDir+"/test00.txt", symlinkDir+"/link")
 	createSymlink(t, base, fileDir+"/test00.txt", symlinkDir+"/link2")
 
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
 	removeAll(t, backupFS, symlinkDir+"/link")
 	mustNotLExist(t, backupFS, symlinkDir+"/link")
 
@@ -187,6 +226,15 @@ func TestBackupFS_RemoveAll(t *testing.T) {
 
 	mustExist(t, backup, fileDir)
 	mustExist(t, backup, fileDir2)
+
+	// ROLLBACK
+	err := backupFS.Rollback()
+	require.NoError(t, err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_Rename(t *testing.T) {
@@ -197,7 +245,7 @@ func TestBackupFS_Rename(t *testing.T) {
 		basePrefix   = "/base"
 		backupPrefix = "/backup"
 	)
-	root, base, backup, BackupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
 
 	var (
 		oldDirName   = "/test/rename"
@@ -209,11 +257,14 @@ func TestBackupFS_Rename(t *testing.T) {
 	require.NoError(err)
 	mustExist(t, root, "base"+oldDirName)
 
-	err = BackupFS.Rename(oldDirName, newDirName)
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
+	err = backupFS.Rename(oldDirName, newDirName)
 	require.NoError(err)
 
-	mustNotExist(t, BackupFS, oldDirName)
-	mustExist(t, BackupFS, newDirName)
+	mustNotExist(t, backupFS, oldDirName)
+	mustExist(t, backupFS, newDirName)
 
 	mustNotExist(t, base, oldDirName)
 	mustExist(t, base, newDirName)
@@ -221,15 +272,24 @@ func TestBackupFS_Rename(t *testing.T) {
 	mustNotExist(t, backup, newDirName)
 	mustExist(t, backup, oldDirName)
 
-	err = BackupFS.Rename(newDirName, newerDirName)
+	err = backupFS.Rename(newDirName, newerDirName)
 	require.NoError(err)
 
-	mustNotExist(t, BackupFS, newDirName)
-	mustExist(t, BackupFS, newerDirName)
+	mustNotExist(t, backupFS, newDirName)
+	mustExist(t, backupFS, newerDirName)
 
 	mustExist(t, backup, oldDirName)
 	mustNotExist(t, backup, newDirName)
 	mustNotExist(t, backup, newerDirName)
+
+	// ROLLBACK
+	err = backupFS.Rollback()
+	require.NoError(err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_Rollback(t *testing.T) {
@@ -260,6 +320,9 @@ func TestBackupFS_Rollback(t *testing.T) {
 	createFile(t, base, fileDir+"/test02.txt", fileContent)
 	createFile(t, base, fileDir2+"/test03.txt", fileContent)
 	createFile(t, base, fileDir2+"/test04.txt", fileContent)
+
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
 
 	// delete directory & files that did exist before
 	removeAll(t, backupFS, fileDir)
@@ -322,6 +385,10 @@ func TestBackupFS_Rollback(t *testing.T) {
 	// but old directories that did exist before should still exist
 	mustExist(t, base, fileDir)
 	mustExist(t, backupFS, fileDir)
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
@@ -452,6 +519,9 @@ func TestBackupFS_JSON(t *testing.T) {
 	createFile(t, base, fileDir2+"/test03.txt", fileContent)
 	createFile(t, base, fileDir2+"/test04.txt", fileContent)
 
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
 	// delete directory & files that did exist before
 	removeAll(t, backupFS, fileDir)
 
@@ -541,6 +611,10 @@ func TestBackupFS_JSON(t *testing.T) {
 	// but old directories that did exist before should still exist
 	mustExist(t, base, "/test/001")
 	mustExist(t, backupFSNew, "/test/001")
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_Symlink(t *testing.T) {
@@ -573,6 +647,9 @@ func TestBackupFS_Symlink(t *testing.T) {
 
 	createSymlink(t, base, fileDir+"/test01.txt", fileDirRoot+"/file_symlink")
 	createSymlink(t, base, fileDir, fileDirRoot+"/directory_symlink")
+
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
 
 	// modify through BackupFS layer
 
@@ -615,6 +692,10 @@ func TestBackupFS_Symlink(t *testing.T) {
 	mustNotLExist(t, backup, fileDirRoot+"/file_symlink")
 	mustNotLExist(t, backup, fileDirRoot+"/directory_symlink")
 
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
+
 }
 
 func TestBackupFS_Mkdir(t *testing.T) {
@@ -639,6 +720,9 @@ func TestBackupFS_Mkdir(t *testing.T) {
 	err := mkdir(t, base, fileDirRoot, 0755)
 	require.NoError(err)
 
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
 	err = mkdir(t, backupFS, fileDir2, 0755)
 	require.Error(err, "cannot create child directory without having created its parent")
 
@@ -652,6 +736,16 @@ func TestBackupFS_Mkdir(t *testing.T) {
 
 	// /test existed in the base filesystem and has been removed at the end -> upon removal we backup this directory.
 	mustLExist(t, backup, fileDirRoot)
+
+	// ROLLBACK
+	err = backupFS.Rollback()
+	require.NoError(err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
+
 }
 
 func TestBackupFS_Chmod(t *testing.T) {
@@ -678,6 +772,10 @@ func TestBackupFS_Chmod(t *testing.T) {
 	require.NoError(err)
 	initialMode := initialFi.Mode()
 
+	// snapshot filesystem states
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
 	// change mod
 	expectedNewPerm := fs.FileMode(0644)
 	chmod(t, backupFS, filePath, expectedNewPerm)
@@ -689,6 +787,15 @@ func TestBackupFS_Chmod(t *testing.T) {
 	// compare backed up permissions to initial permissions
 	backedUpPerm := fi.Mode()
 	modeMustBeEqual(t, initialMode, backedUpPerm)
+
+	// ROLLBACK
+	err = backupFS.Rollback()
+	require.NoError(err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestTime(t *testing.T) {
@@ -764,6 +871,7 @@ func TestCreateFileInSymlinkDir(t *testing.T) {
 	mkdirAll(t, base, originalSubDir, 0755)
 	createSymlink(t, base, originalLinkedDir, symlinkDir)
 	createFile(t, base, originalFilePath, originalFileContent)
+
 	baseFsState := createFSState(t, base, "/")
 	backupFsState := createFSState(t, backup, "/")
 
@@ -799,6 +907,7 @@ func TestMkdirInSymlinkDir(t *testing.T) {
 	mkdirAll(t, base, originalSubDir, 0755)
 	createSymlink(t, base, originalLinkedDir, symlinkDir)
 	createFile(t, base, originalFilePath, originalFileContent)
+
 	baseFsState := createFSState(t, base, "/")
 	backupFsState := createFSState(t, backup, "/")
 
@@ -835,6 +944,7 @@ func TestRemoveDirInSymlinkDir(t *testing.T) {
 	mkdirAll(t, base, originalSubDir, 0755)
 	createSymlink(t, base, originalLinkedDir, symlinkDir)
 	createFile(t, base, originalFilePath, originalFileContent)
+
 	baseFsState := createFSState(t, base, "/")
 	backupFsState := createFSState(t, backup, "/")
 
