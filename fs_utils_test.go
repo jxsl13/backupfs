@@ -33,7 +33,7 @@ func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
 	resolvedPath, found, err := resolvePathWithFound(base, symlinkFilePath)
 	require.NoError(t, err)
 	require.False(t, found)
-	require.Equal(t, originalFilePath, resolvedPath)
+	require.Equal(t, filepath.FromSlash(originalFilePath), resolvedPath)
 }
 
 func TestResolveCircularSymlinkPath(t *testing.T) {
@@ -74,7 +74,7 @@ func TestResolveCircularSymlinkPath(t *testing.T) {
 	resolvedPath, found, err := resolvePathWithFound(base, symlinkFilePath)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, filePath, resolvedPath)
+	require.Equal(t, filepath.FromSlash(filePath), resolvedPath)
 }
 
 func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
@@ -104,7 +104,7 @@ func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 	resolvedPath, found, err := resolvePathWithFound(base, symlinkFilePath)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, originalFilePath, resolvedPath)
+	require.Equal(t, filepath.FromSlash(originalFilePath), resolvedPath)
 }
 
 func TestResolvePathWithRelativeSymlink(t *testing.T) {
@@ -135,7 +135,7 @@ func TestResolvePathWithRelativeSymlink(t *testing.T) {
 	resolvedPath, found, err := resolvePathWithFound(base, symlinkFilePath)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, originalFilePath, resolvedPath)
+	require.Equal(t, filepath.FromSlash(originalFilePath), resolvedPath)
 }
 
 func TestResolveFilePathWithRelativeSymlink(t *testing.T) {
