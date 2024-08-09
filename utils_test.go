@@ -64,7 +64,7 @@ func mustNotLExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	found, err := lExists(fsys, path)
+	_, found, err := lExists(fsys, path)
 	require.NoError(err)
 	require.Falsef(found, "path found but should not exist: %s", path)
 }
@@ -82,7 +82,7 @@ func mustLExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	found, err := lExists(fsys, path)
+	_, found, err := lExists(fsys, path)
 	require.NoError(err)
 	require.Truef(found, "path not found but should exist: %s", path)
 }
@@ -115,13 +115,16 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	oldpath = filepath.Clean(oldpath)
 	newpath = filepath.Clean(newpath)
 
-	dirPath := filepath.Dir(oldpath)
-	found, err := exists(fsys, toAbsSymlink(oldpath, newpath))
+	oldpath = toAbsSymlink(oldpath, newpath)
+
+	_, err := exists(fsys, oldpath)
 	require.NoError(err)
 
+	dirPath := filepath.Dir(oldpath)
+	found, err := exists(fsys, dirPath)
+	require.NoError(err)
 	if !found {
-		err = fsys.MkdirAll(dirPath, 0755)
-		require.NoError(err)
+		mkdirAll(t, fsys, dirPath, 0755)
 	}
 
 	dirPath = filepath.Dir(newpath)
@@ -129,8 +132,7 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	require.NoError(err)
 
 	if !found {
-		err = fsys.MkdirAll(dirPath, 0755)
-		require.NoError(err)
+		mkdirAll(t, fsys, dirPath, 0755)
 	}
 
 	// check newpath after creating the symlink
@@ -144,7 +146,7 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	require.True(hasSymlinkFlag, "the target(newpath) symlink does not have the symlink flag set: ", newpath)
 
 	// check oldpath after creating the symlink
-	fi, err = fsys.Lstat(toAbsSymlink(oldpath, newpath))
+	fi, err = fsys.Lstat(oldpath)
 	switch {
 	case err == nil:
 		hasSymlinkFlag = fi.Mode()&os.ModeType&os.ModeSymlink != 0
@@ -238,9 +240,10 @@ func mkdir(t *testing.T, fsys FS, path string, perm fs.FileMode) error {
 		return err
 	}
 
-	b, err := lExists(fsys, path)
+	fi, b, err := lExists(fsys, path)
 	require.NoError(err)
 	require.True(b, "directory: ", path, "must exist after it has been created but does not.")
+	require.True(fi.IsDir(), "path: ", path, "is not a directory after it has been created.")
 	return nil
 }
 
@@ -257,7 +260,7 @@ func chmod(t *testing.T, fsys FS, path string, perm fs.FileMode) {
 	path = filepath.Clean(path)
 	require := require.New(t)
 
-	exists, err := lExists(fsys, path)
+	_, exists, err := lExists(fsys, path)
 	require.NoError(err)
 
 	if !exists {
