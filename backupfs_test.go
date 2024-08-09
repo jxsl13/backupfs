@@ -828,6 +828,7 @@ func TestRemoveDirInSymlinkDir(t *testing.T) {
 		originalFilePath    = path.Join(originalSubDir, "test.txt")
 		originalFileContent = "test_content"
 		symlinkDir          = "/lib"
+		symlinkSubDir       = "/lib/systemd"
 	)
 
 	// prepare existing files
@@ -838,7 +839,7 @@ func TestRemoveDirInSymlinkDir(t *testing.T) {
 	backupFsState := createFSState(t, backup, "/")
 
 	// try creating the directory tree ober a symlinked folder
-	removeAll(t, backupFS, filepath.Join(symlinkDir, "systemd"))
+	removeAll(t, backupFS, symlinkSubDir)
 
 	err := backupFS.Rollback()
 	require.NoError(t, err)
