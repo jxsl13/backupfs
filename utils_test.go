@@ -55,7 +55,7 @@ func mustNotExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	found, err := exists(fsys, path)
+	_, found, err := lexists(fsys, path)
 	require.NoError(err)
 	require.False(found, "found file path but should not exist: "+path)
 }
@@ -73,7 +73,7 @@ func mustExist(t *testing.T, fsys FS, path string) {
 	path = filepath.Clean(path)
 
 	require := require.New(t)
-	found, err := exists(fsys, path)
+	_, found, err := lexists(fsys, path)
 	require.NoError(err)
 	require.True(found, "file path not found but should exist: "+path)
 }
@@ -117,18 +117,18 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 
 	oldpath = toAbsSymlink(oldpath, newpath)
 
-	_, err := exists(fsys, oldpath)
+	_, _, err := lexists(fsys, oldpath)
 	require.NoError(err)
 
 	dirPath := filepath.Dir(oldpath)
-	found, err := exists(fsys, dirPath)
+	_, found, err := lexists(fsys, dirPath)
 	require.NoError(err)
 	if !found {
 		mkdirAll(t, fsys, dirPath, 0755)
 	}
 
 	dirPath = filepath.Dir(newpath)
-	found, err = exists(fsys, dirPath)
+	_, found, err = lexists(fsys, dirPath)
 	require.NoError(err)
 
 	if !found {
@@ -166,7 +166,7 @@ func createFile(t *testing.T, fsys FS, path, content string) {
 	require := require.New(t)
 
 	dirPath := filepath.Dir(path)
-	found, err := exists(fsys, dirPath)
+	_, found, err := lexists(fsys, dirPath)
 	require.NoError(err)
 
 	if !found {
@@ -191,7 +191,7 @@ func openFile(t *testing.T, fsys FS, path, content string, perm fs.FileMode) {
 	require := require.New(t)
 
 	dirPath := filepath.Dir(path)
-	found, err := exists(fsys, dirPath)
+	_, found, err := lexists(fsys, dirPath)
 	require.NoError(err)
 
 	if !found {
@@ -218,7 +218,7 @@ func mkdirAll(t *testing.T, fsys FS, path string, perm fs.FileMode) {
 	require.NoError(err)
 
 	_, err = IterateDirTree(path, func(s string) (bool, error) {
-		exists, err := exists(fsys, s)
+		_, exists, err := lexists(fsys, s)
 		if err != nil {
 			return false, err
 		}
@@ -260,16 +260,16 @@ func chmod(t *testing.T, fsys FS, path string, perm fs.FileMode) {
 	path = filepath.Clean(path)
 	require := require.New(t)
 
-	_, exists, err := lexists(fsys, path)
+	_, found, err := lexists(fsys, path)
 	require.NoError(err)
 
-	if !exists {
+	if !found {
 		err = fsys.Chmod(path, perm)
 		require.Error(err)
 		return
 	}
 
-	// exists
+	// lexists
 
 	err = fsys.Chmod(path, perm)
 	require.NoError(err)

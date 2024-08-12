@@ -6,6 +6,7 @@ import (
 	"log"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -579,6 +580,14 @@ func TestBackupFS_JSON(t *testing.T) {
 		require.Equal(info.Size(), newInfo.Size())
 		require.Equal(info.ModTime().UnixNano(), newInfo.ModTime().UnixNano())
 		require.Equal(info.Mode(), newInfo.Mode())
+
+		if runtime.GOOS != "windows" {
+			require.Greater(toUID(info), -1)
+			require.Greater(toGID(info), -1)
+
+			require.Greater(toUID(newInfo), -1)
+			require.Greater(toGID(newInfo), -1)
+		}
 	}
 
 	// ROLLBACK

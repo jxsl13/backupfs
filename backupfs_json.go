@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func toFInfo(path string, fi fs.FileInfo) *fInfo {
+func toFInfo(filePath string, fi fs.FileInfo) *fInfo {
 	return &fInfo{
-		FileName:    filepath.ToSlash(path),
+		FileName:    filepath.ToSlash(filePath),
 		FileMode:    uint32(fi.Mode()),
 		FileModTime: fi.ModTime().UnixNano(),
 		FileSize:    fi.Size(),
@@ -43,5 +43,5 @@ func (fi *fInfo) IsDir() bool {
 	return fi.Mode().IsDir()
 }
 func (fi *fInfo) Sys() interface{} {
-	return nil
+	return toSys(fi.FileUid, fi.FileGid)
 }
