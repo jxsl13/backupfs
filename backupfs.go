@@ -106,6 +106,8 @@ func (fsys *BackupFS) Name() string {
 }
 
 func (fsys *BackupFS) Map() (metadata map[string]fs.FileInfo) {
+	fsys.mu.Lock()
+	defer fsys.mu.Unlock()
 
 	m := make(map[string]fs.FileInfo, len(fsys.baseInfos))
 	for path, info := range fsys.baseInfos {
@@ -114,12 +116,14 @@ func (fsys *BackupFS) Map() (metadata map[string]fs.FileInfo) {
 			continue
 		}
 
-		m[path] = toFInfo(path, info)
+		m[path] = info
 	}
 	return m
 }
 
 func (fsys *BackupFS) SetMap(metadata map[string]fs.FileInfo) {
+	fsys.mu.Lock()
+	defer fsys.mu.Unlock()
 
 	// clone state
 	m := make(map[string]fs.FileInfo, len(metadata))
@@ -159,6 +163,9 @@ func (fsys *BackupFS) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+
+	fsys.mu.Lock()
+	defer fsys.mu.Unlock()
 
 	fsys.baseInfos = make(map[string]fs.FileInfo, len(fiMap))
 	for k, v := range fiMap {

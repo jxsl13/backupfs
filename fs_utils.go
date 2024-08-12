@@ -330,18 +330,6 @@ func restoreSymlink(name string, backupFi fs.FileInfo, base, backup FS) (err err
 	return copySymlink(backup, base, name, backupFi)
 }
 
-// Check if a file or directory exists.
-func exists(fsys FS, path string) (bool, error) {
-	_, err := fsys.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if isNotFoundError(err) {
-		return false, nil
-	}
-	return false, err
-}
-
 // Check if a symlin, file or directory exists.
 func lexists(fsys FS, path string) (fs.FileInfo, bool, error) {
 	fi, err := fsys.Lstat(path)
