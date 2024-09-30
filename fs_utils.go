@@ -103,6 +103,17 @@ func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
 		return fmt.Errorf("%w: %s", errDirInfoExpected, name)
 	}
 
+	// do not touch the root directory
+	// this is either the OS root directory, which we do not want to change, as
+	// on for example redhat it's a read only directory which is not modifiable.
+	// on the other hand it is the root directory of the backup folder which has already its permissions
+	// set correctly.
+	pathWithoutVolume := TrimVolume(name)
+	if pathWithoutVolume == separator || pathWithoutVolume == "/" {
+		// windows supports both path separators, which is why we check for both
+		return nil
+	}
+
 	// try to create all dirs as somone might have tempered with the file system
 	targetMode := info.Mode()
 	err = fs.MkdirAll(name, targetMode.Perm())
