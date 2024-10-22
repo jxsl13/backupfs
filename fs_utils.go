@@ -168,18 +168,7 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error)
 	//
 	targetMode := info.Mode()
 
-	// same as create but with custom permissions
-	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, targetMode.Perm())
-	if err != nil {
-		return err
-	}
-
-	_, err = io.Copy(file, sourceFile)
-	if err != nil {
-		return err
-	}
-
-	err = file.Close()
+	err = writeFile(fs, name, targetMode.Perm(), sourceFile)
 	if err != nil {
 		return err
 	}
@@ -215,6 +204,23 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error)
 		return err
 	}
 
+	return nil
+}
+
+func writeFile(fs FS, name string, perm fs.FileMode, content io.Reader) (err error) {
+	// same as create but with custom permissions
+	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm.Perm())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, file.Close())
+	}()
+
+	_, err = io.Copy(file, content)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -32,11 +32,11 @@ func (a ByLeastFilePathSeparators) Less(i, j int) bool {
 // LessFilePathSeparators compares two file paths by the number of file path separators
 // returns true if a has less file path separators than b
 func LessFilePathSeparators(a, b string) bool {
-	ai := TrimVolume(a)
-	aj := TrimVolume(a)
+	aa := TrimVolume(a)
+	ab := TrimVolume(b)
 
-	ca := strings.Count(ai, separator)
-	cb := strings.Count(aj, separator)
+	ca := strings.Count(aa, separator)
+	cb := strings.Count(ab, separator)
 
 	/*
 		Edge case where the root path is compared to a file in the root path.
@@ -47,11 +47,11 @@ func LessFilePathSeparators(a, b string) bool {
 	*/
 
 	// root = smallest number of separators
-	if ca == 1 && ai == separator {
+	if ca == 1 && aa == separator {
 		ca = -1
 	}
 
-	if cb == 1 && aj == separator {
+	if cb == 1 && ab == separator {
 		cb = -1
 	}
 
