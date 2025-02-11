@@ -1,9 +1,12 @@
 # BackupFS
 
-Multiple filesystem abstraction layers working together to create a straight forward rollback mechanism for filesystem modifications with OS-independent file paths.
-This package provides multiple filesystem abstractions which implement the spf13/afero.FS interface as well as the optional interfaces.
+Multiple filesystem abstraction layers working together to create a straight forward rollback mechanism for filesystem modifications with OS-dependent file paths.
+This package provides multiple filesystem abstractions which together create a straight forward backup-on-write abstraction layer.
 
 They require the filesystem modifications to happen via the provided structs of this package.
+
+## Requirements:
+- for Windows you require either an enabled Developer Mode or the Security Policy that allows you to create symbolic links, see [https://github.com/Schniz/fnm/issues/338](https://github.com/Schniz/fnm/issues/338)
 
 ## Example Use Case
 
