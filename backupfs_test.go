@@ -2,6 +2,8 @@ package backupfs
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"path"
@@ -18,11 +20,7 @@ import (
 func TestBackupFS_Create(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	root, base, backup, backupFS := NewTestBackupFS()
 	defer func() {
 		require.NoError(t, root.RemoveAll("/"))
 	}()
@@ -40,22 +38,22 @@ func TestBackupFS_Create(t *testing.T) {
 
 	createFile(t, backupFS, filePath, fileContentOverwritten)
 
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwritten)
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	fileMustContainText(t, base, filePath, fileContentOverwritten)
+	fileMustContainText(t, backup, filePath, fileContent)
 
 	createFile(t, backupFS, filePath, fileContentOverwrittenAgain)
 	fileMustContainText(t, backupFS, filePath, fileContentOverwrittenAgain)
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
+	fileMustContainText(t, base, filePath, fileContentOverwrittenAgain)
 	// the backed up file should still have the same state as the first initial file
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	fileMustContainText(t, backup, filePath, fileContent)
 
 	var (
 		newFilePath = "/test/02/test_02.txt"
 	)
 
 	createFile(t, backupFS, newFilePath, fileContent)
-	fileMustContainText(t, root, "base"+newFilePath, fileContent)
-	mustNotExist(t, root, "backup"+newFilePath)
+	fileMustContainText(t, base, newFilePath, fileContent)
+	mustNotExist(t, backup, newFilePath)
 
 	// ROLLBACK
 	err := backupFS.Rollback()
@@ -71,7 +69,7 @@ func TestBackupFS_Name(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
-	_, _, _, backupFS := NewTestBackupFS("/base", "/backup")
+	_, _, _, backupFS := NewTestBackupFS()
 
 	require.Equal(backupFS.Name(), "BackupFS")
 }
@@ -79,11 +77,7 @@ func TestBackupFS_Name(t *testing.T) {
 func TestBackupFS_OpenFile(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		filePath                    = "/test/01/test_01.txt"
@@ -98,22 +92,22 @@ func TestBackupFS_OpenFile(t *testing.T) {
 
 	openFile(t, backupFS, filePath, fileContentOverwritten, 1755)
 
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwritten)
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	fileMustContainText(t, base, filePath, fileContentOverwritten)
+	fileMustContainText(t, backup, filePath, fileContent)
 
 	openFile(t, backupFS, filePath, fileContentOverwrittenAgain, 0766)
 	fileMustContainText(t, backupFS, filePath, fileContentOverwrittenAgain)
-	fileMustContainText(t, root, "base"+filePath, fileContentOverwrittenAgain)
+	fileMustContainText(t, base, filePath, fileContentOverwrittenAgain)
 	// the backed up file should still have the same state as the first initial file
-	fileMustContainText(t, root, "backup"+filePath, fileContent)
+	fileMustContainText(t, backup, filePath, fileContent)
 
 	var (
 		newFilePath = "/test/02/test_02.txt"
 	)
 
 	openFile(t, backupFS, newFilePath, fileContent, 0755)
-	fileMustContainText(t, root, "base"+newFilePath, fileContent)
-	mustNotExist(t, root, "backup"+newFilePath)
+	fileMustContainText(t, base, newFilePath, fileContent)
+	mustNotExist(t, backup, newFilePath)
 
 	// ROLLBACK
 	err := backupFS.Rollback()
@@ -128,18 +122,14 @@ func TestBackupFS_OpenFile(t *testing.T) {
 func TestBackupFS_Remove(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		filePath    = "/test/01/test_01.txt"
 		fileContent = "test_content"
 	)
 	createFile(t, base, filePath, fileContent)
-	fileMustContainText(t, root, "base"+filePath, fileContent)
+	fileMustContainText(t, base, filePath, fileContent)
 
 	baseFSState := createFSState(t, base, "/")
 	backupFSState := createFSState(t, backup, "/")
@@ -148,10 +138,8 @@ func TestBackupFS_Remove(t *testing.T) {
 	mustNotExist(t, backupFS, filePath)
 
 	mustNotExist(t, base, filePath)
-	mustNotExist(t, root, "base"+filePath)
 
 	mustExist(t, backup, filePath)
-	mustExist(t, root, "backup"+filePath)
 
 	// ROLLBACK
 	err := backupFS.Rollback()
@@ -166,11 +154,7 @@ func TestBackupFS_Remove(t *testing.T) {
 func TestBackupFS_RemoveAll(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		// different number of file path separators
@@ -186,44 +170,45 @@ func TestBackupFS_RemoveAll(t *testing.T) {
 	mkdirAll(t, base, fileDir2, 0755)
 	mkdirAll(t, base, symlinkDir, 0755)
 
-	createFile(t, base, fileDir+"/test01.txt", fileContent)
-	createFile(t, base, fileDir+"/test02.txt", fileContent)
-	createFile(t, base, fileDir2+"/test03.txt", fileContent)
-	createFile(t, base, fileDir2+"/test04.txt", fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test02.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test03.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test04.txt"), fileContent)
 
 	// symlink pointing at random location that doesnot exist
-	createSymlink(t, base, fileDir+"/test00.txt", symlinkDir+"/link")
-	createSymlink(t, base, fileDir+"/test00.txt", symlinkDir+"/link2")
+	createSymlink(t, base, filepath.Join(fileDir, "/test00.txt"), filepath.Join(symlinkDir, "/link"))
+	createSymlink(t, base, filepath.Join(fileDir, "/test00.txt"), filepath.Join(symlinkDir, "/link2"))
 
 	baseFSState := createFSState(t, base, "/")
 	backupFSState := createFSState(t, backup, "/")
 
-	removeAll(t, backupFS, symlinkDir+"/link")
-	mustNotLExist(t, backupFS, symlinkDir+"/link")
+	removeAll(t, backupFS, filepath.Join(symlinkDir, "/link"))
+	removeAll(t, backupFS, filepath.Join(symlinkDir, "/fileDoesNotExistAndShouldNotThrowAnErrorWhenUsedInRemoveAll"))
+	mustNotLExist(t, backupFS, filepath.Join(symlinkDir, "/link"))
 
 	// remove /test dir
 	removeAll(t, backupFS, fileDirRoot)
 	mustNotExist(t, backupFS, fileDirRoot)
 
 	// deleted from base file system
-	mustNotExist(t, base, fileDir+"/test01.txt")
-	mustNotExist(t, base, fileDir+"/test02.txt")
-	mustNotExist(t, base, fileDir2+"/test03.txt")
-	mustNotExist(t, base, fileDir2+"/test04.txt")
+	mustNotExist(t, base, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir, "/test02.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir2, "/test03.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir2, "/test04.txt"))
 
 	// link2 is a symlink in one of the sub folders in the
 	// directory that is being removed with all of its content
-	mustNotLExist(t, backupFS, symlinkDir+"/link2")
+	mustNotLExist(t, backupFS, filepath.Join(symlinkDir, "/link2"))
 
 	mustNotExist(t, base, fileDirRoot)
 	mustNotExist(t, base, fileDir)
 	mustNotExist(t, base, fileDir2)
 
 	// must exist in bakcup
-	fileMustContainText(t, backup, fileDir+"/test01.txt", fileContent)
-	fileMustContainText(t, backup, fileDir+"/test02.txt", fileContent)
-	fileMustContainText(t, backup, fileDir2+"/test03.txt", fileContent)
-	fileMustContainText(t, backup, fileDir2+"/test04.txt", fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir, "/test02.txt"), fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir2, "/test03.txt"), fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir2, "/test04.txt"), fileContent)
 
 	mustExist(t, backup, fileDir)
 	mustExist(t, backup, fileDir2)
@@ -242,11 +227,9 @@ func TestBackupFS_Rename(t *testing.T) {
 	t.Parallel()
 
 	var (
-		require      = require.New(t)
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
+		require = require.New(t)
 	)
-	root, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		oldDirName   = "/test/rename"
@@ -256,7 +239,7 @@ func TestBackupFS_Rename(t *testing.T) {
 
 	err := base.MkdirAll(oldDirName, 0755)
 	require.NoError(err)
-	mustExist(t, root, "base"+oldDirName)
+	mustExist(t, base, oldDirName)
 
 	baseFSState := createFSState(t, base, "/")
 	backupFSState := createFSState(t, backup, "/")
@@ -297,12 +280,10 @@ func TestBackupFS_Rollback(t *testing.T) {
 	t.Parallel()
 
 	var (
-		require      = require.New(t)
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
+		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		// different number of file path separators
@@ -317,10 +298,10 @@ func TestBackupFS_Rollback(t *testing.T) {
 	mkdirAll(t, base, fileDir, 0755)
 	mkdirAll(t, base, fileDir2, 0755)
 
-	createFile(t, base, fileDir+"/test01.txt", fileContent)
-	createFile(t, base, fileDir+"/test02.txt", fileContent)
-	createFile(t, base, fileDir2+"/test03.txt", fileContent)
-	createFile(t, base, fileDir2+"/test04.txt", fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test02.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test03.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test04.txt"), fileContent)
 
 	baseFSState := createFSState(t, base, "/")
 	backupFSState := createFSState(t, backup, "/")
@@ -330,23 +311,23 @@ func TestBackupFS_Rollback(t *testing.T) {
 
 	// removed files must not exist
 	mustNotExist(t, base, fileDir)
-	mustNotExist(t, base, fileDir+"/test01.txt")
-	mustNotExist(t, base, fileDir+"/test02.txt")
+	mustNotExist(t, base, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir, "/test02.txt"))
 
 	mustNotExist(t, backupFS, fileDir)
-	mustNotExist(t, backupFS, fileDir+"/test01.txt")
-	mustNotExist(t, backupFS, fileDir+"/test02.txt")
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test02.txt"))
 
 	mustExist(t, backup, fileDirRoot)
 	mustExist(t, backup, fileDir)
-	fileMustContainText(t, backup, fileDir+"/test01.txt", fileContent)
-	fileMustContainText(t, backup, fileDir+"/test02.txt", fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir, "/test02.txt"), fileContent)
 
 	// create files that did not exist before
-	createFile(t, backupFS, fileDir2+"/test05_new.txt", fileContentNew)
+	createFile(t, backupFS, filepath.Join(fileDir2, "/test05_new.txt"), fileContentNew)
 
 	// must not exist becaus eit's a new file that did not exist in the base fs before.
-	mustNotExist(t, backup, fileDir2+"/test05_new.txt")
+	mustNotExist(t, backup, filepath.Join(fileDir2, "/test05_new.txt"))
 
 	// create subdir of deleted directory which did not exist before
 	mkdirAll(t, backupFS, "/test/001/subdir_new", 0755)
@@ -363,17 +344,17 @@ func TestBackupFS_Rollback(t *testing.T) {
 
 	// previously deleted files must have been restored
 	mustExist(t, backupFS, fileDir)
-	mustExist(t, backupFS, fileDir+"/test01.txt")
-	mustExist(t, backupFS, fileDir+"/test02.txt")
+	mustExist(t, backupFS, filepath.Join(fileDir, "/test01.txt"))
+	mustExist(t, backupFS, filepath.Join(fileDir, "/test02.txt"))
 
 	// also restored in the underlying filesystem
 	mustExist(t, base, fileDir)
-	mustExist(t, base, fileDir+"/test01.txt")
-	mustExist(t, base, fileDir+"/test02.txt")
+	mustExist(t, base, filepath.Join(fileDir, "/test01.txt"))
+	mustExist(t, base, filepath.Join(fileDir, "/test02.txt"))
 
 	// newly created files must have been deleted upon rollback
-	mustNotExist(t, base, fileDir2+"/test05_new.txt")
-	mustNotExist(t, backupFS, fileDir2+"/test05_new.txt")
+	mustNotExist(t, base, filepath.Join(fileDir2, "/test05_new.txt"))
+	mustNotExist(t, backupFS, filepath.Join(fileDir2, "/test05_new.txt"))
 
 	// new files should have been deleted
 	mustNotExist(t, base, "/test/001/subdir_new/test06_new.txt")
@@ -396,12 +377,10 @@ func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
 	t.Parallel()
 
 	var (
-		require      = require.New(t)
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
+		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		// different number of file path separators
@@ -416,10 +395,10 @@ func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
 	mkdirAll(t, base, fileDir, 0755)
 	mkdirAll(t, base, fileDir2, 0755)
 
-	createFile(t, base, fileDir+"/test01.txt", fileContent)
-	createFile(t, base, fileDir+"/test02.txt", fileContent)
-	createFile(t, base, fileDir2+"/test03.txt", fileContent)
-	createFile(t, base, fileDir2+"/test04.txt", fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test02.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test03.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test04.txt"), fileContent)
 
 	// delete directory & files that did exist before
 	removeAll(t, backupFS, fileDir)
@@ -431,29 +410,29 @@ func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
 
 	// removed files must not exist
 	mustNotExist(t, base, fileDir)
-	mustNotExist(t, base, fileDir+"/test01.txt")
-	mustNotExist(t, base, fileDir+"/test02.txt")
+	mustNotExist(t, base, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir, "/test02.txt"))
 
 	mustNotExist(t, backupFS, fileDir)
-	mustNotExist(t, backupFS, fileDir+"/test01.txt")
-	mustNotExist(t, backupFS, fileDir+"/test02.txt")
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test02.txt"))
 
 	mustExist(t, backup, fileDirRoot)
 	mustNotExist(t, backup, fileDir)
-	mustNotExist(t, backup, fileDir+"/test01.txt")
-	mustNotExist(t, backup, fileDir+"/test02.txt")
+	mustNotExist(t, backup, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, backup, filepath.Join(fileDir, "/test02.txt"))
 
 	// create files that did not exist before
-	createFile(t, backupFS, fileDir2+"/test05_new.txt", fileContentNew)
-	createFile(t, backupFS, fileDir2+"/test06_new.txt", fileContentNew)
+	createFile(t, backupFS, filepath.Join(fileDir2, "/test05_new.txt"), fileContentNew)
+	createFile(t, backupFS, filepath.Join(fileDir2, "/test06_new.txt"), fileContentNew)
 
-	mustNotExist(t, backup, fileDir2+"/test05_new.txt")
-	mustNotExist(t, backup, fileDir2+"/test06_new.txt")
+	mustNotExist(t, backup, filepath.Join(fileDir2, "/test05_new.txt"))
+	mustNotExist(t, backup, filepath.Join(fileDir2, "/test06_new.txt"))
 
-	err = backupFS.ForceBackup(fileDir2 + "/test05_new.txt")
+	err = backupFS.ForceBackup(filepath.Join(fileDir2, "/test05_new.txt"))
 	require.NoError(err)
 
-	fileMustContainText(t, backup, fileDir2+"/test05_new.txt", fileContentNew)
+	fileMustContainText(t, backup, filepath.Join(fileDir2, "/test05_new.txt"), fileContentNew)
 
 	mkdirAll(t, backupFS, "/test/001/subdir_new", 0755)
 	createFile(t, backupFS, "/test/001/subdir_new/test06_new.txt", "fileContentNew")
@@ -467,17 +446,17 @@ func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
 	// ROLLBACK
 
 	mustNotExist(t, backupFS, fileDir)
-	mustNotExist(t, backupFS, fileDir+"/test01.txt")
-	mustNotExist(t, backupFS, fileDir+"/test02.txt")
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test02.txt"))
 
 	mustNotExist(t, base, fileDir)
-	mustNotExist(t, base, fileDir+"/test01.txt")
-	mustNotExist(t, base, fileDir+"/test02.txt")
+	mustNotExist(t, base, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir, "/test02.txt"))
 
-	mustExist(t, base, fileDir2+"/test05_new.txt")
-	mustExist(t, backupFS, fileDir2+"/test05_new.txt")
-	mustNotExist(t, base, fileDir2+"/test06_new.txt")
-	mustNotExist(t, backupFS, fileDir2+"/test06_new.txt")
+	mustExist(t, base, filepath.Join(fileDir2, "/test05_new.txt"))
+	mustExist(t, backupFS, filepath.Join(fileDir2, "/test05_new.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir2, "/test06_new.txt"))
+	mustNotExist(t, backupFS, filepath.Join(fileDir2, "/test06_new.txt"))
 
 	mustNotExist(t, base, "/test/001/subdir_new/test06_new.txt")
 	mustNotExist(t, backupFS, "/test/001/subdir_new/test06_new.txt")
@@ -495,12 +474,10 @@ func TestBackupFS_JSON(t *testing.T) {
 	t.Parallel()
 
 	var (
-		require      = require.New(t)
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
+		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		// different number of file path separators
@@ -515,10 +492,10 @@ func TestBackupFS_JSON(t *testing.T) {
 	mkdirAll(t, base, fileDir, 0755)
 	mkdirAll(t, base, fileDir2, 0755)
 
-	createFile(t, base, fileDir+"/test01.txt", fileContent)
-	createFile(t, base, fileDir+"/test02.txt", fileContent)
-	createFile(t, base, fileDir2+"/test03.txt", fileContent)
-	createFile(t, base, fileDir2+"/test04.txt", fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test02.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test03.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test04.txt"), fileContent)
 
 	baseFSState := createFSState(t, base, "/")
 	backupFSState := createFSState(t, backup, "/")
@@ -528,23 +505,23 @@ func TestBackupFS_JSON(t *testing.T) {
 
 	// removed files must not exist
 	mustNotExist(t, base, fileDir)
-	mustNotExist(t, base, fileDir+"/test01.txt")
-	mustNotExist(t, base, fileDir+"/test02.txt")
+	mustNotExist(t, base, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, base, filepath.Join(fileDir, "/test02.txt"))
 
 	mustNotExist(t, backupFS, fileDir)
-	mustNotExist(t, backupFS, fileDir+"/test01.txt")
-	mustNotExist(t, backupFS, fileDir+"/test02.txt")
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test01.txt"))
+	mustNotExist(t, backupFS, filepath.Join(fileDir, "/test02.txt"))
 
 	mustExist(t, backup, fileDirRoot)
 	mustExist(t, backup, fileDir)
-	fileMustContainText(t, backup, fileDir+"/test01.txt", fileContent)
-	fileMustContainText(t, backup, fileDir+"/test02.txt", fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	fileMustContainText(t, backup, filepath.Join(fileDir, "/test02.txt"), fileContent)
 
 	// create files that did not exist before
-	createFile(t, backupFS, fileDir2+"/test05_new.txt", fileContentNew)
+	createFile(t, backupFS, filepath.Join(fileDir2, "/test05_new.txt"), fileContentNew)
 
 	// must not exist becaus eit's a new file that did not exist in the base fs before.
-	mustNotExist(t, backup, fileDir2+"/test05_new.txt")
+	mustNotExist(t, backup, filepath.Join(fileDir2, "/test05_new.txt"))
 
 	// create subdir of deleted directory which did not exist before
 	mkdirAll(t, backupFS, "/test/001/subdir_new", 0755)
@@ -597,17 +574,17 @@ func TestBackupFS_JSON(t *testing.T) {
 
 	// previously deleted files must have been restored
 	mustExist(t, backupFSNew, fileDir)
-	mustExist(t, backupFSNew, fileDir+"/test01.txt")
-	mustExist(t, backupFSNew, fileDir+"/test02.txt")
+	mustExist(t, backupFSNew, filepath.Join(fileDir, "/test01.txt"))
+	mustExist(t, backupFSNew, filepath.Join(fileDir, "/test02.txt"))
 
 	// also restored in the underlying filesystem
 	mustExist(t, base, fileDir)
-	mustExist(t, base, fileDir+"/test01.txt")
-	mustExist(t, base, fileDir+"/test02.txt")
+	mustExist(t, base, filepath.Join(fileDir, "/test01.txt"))
+	mustExist(t, base, filepath.Join(fileDir, "/test02.txt"))
 
 	// newly created files must have been deleted upon rollback
-	mustNotExist(t, base, fileDir2+"/test05_new.txt")
-	mustNotExist(t, backupFSNew, fileDir2+"/test05_new.txt")
+	mustNotExist(t, base, filepath.Join(fileDir2, "/test05_new.txt"))
+	mustNotExist(t, backupFSNew, filepath.Join(fileDir2, "/test05_new.txt"))
 
 	// new files should have been deleted
 	mustNotExist(t, base, "/test/001/subdir_new/test06_new.txt")
@@ -629,12 +606,7 @@ func TestBackupFS_JSON(t *testing.T) {
 func TestBackupFS_Symlink(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		require = require.New(t)
@@ -651,11 +623,11 @@ func TestBackupFS_Symlink(t *testing.T) {
 	mkdirAll(t, base, fileDir, 0755)
 	mkdirAll(t, base, fileDir2, 0755)
 
-	createFile(t, base, fileDir+"/test01.txt", fileContent)
-	createFile(t, base, fileDir2+"/test02.txt", fileContent)
+	createFile(t, base, filepath.Join(fileDir, "/test01.txt"), fileContent)
+	createFile(t, base, filepath.Join(fileDir2, "/test02.txt"), fileContent)
 
-	createSymlink(t, base, fileDir+"/test01.txt", fileDirRoot+"/file_symlink")
-	createSymlink(t, base, fileDir, fileDirRoot+"/directory_symlink")
+	createSymlink(t, base, filepath.Join(fileDir, "/test01.txt"), filepath.Join(fileDirRoot, "/file_symlink"))
+	createSymlink(t, base, fileDir, filepath.Join(fileDirRoot, "/directory_symlink"))
 
 	baseFSState := createFSState(t, base, "/")
 	backupFSState := createFSState(t, backup, "/")
@@ -664,42 +636,42 @@ func TestBackupFS_Symlink(t *testing.T) {
 
 	// the old symlink must have been backed up after this call
 
-	removeFile(t, backupFS, fileDirRoot+"/file_symlink")
-	removeFile(t, backupFS, fileDirRoot+"/directory_symlink")
+	removeFile(t, backupFS, filepath.Join(fileDirRoot, "/file_symlink"))
+	removeFile(t, backupFS, filepath.Join(fileDirRoot, "/directory_symlink"))
 
 	// potential problem case:
 	// Symlink creation fails midway due to another file, directory or symlink already existing.
 	// due to the writing character of the symlink method we do create a backup
 	// but fail to create a new symlink thus the backedup file and the old symlink are indeed the exact same
 	// not exactly a problem but may caus eunnecessary backe dup data
-	createSymlink(t, backupFS, fileDir2+"/test02.txt", fileDirRoot+"/file_symlink")
+	createSymlink(t, backupFS, filepath.Join(fileDir2, "/test02.txt"), filepath.Join(fileDirRoot, "/file_symlink"))
 
-	symlinkMustExistWithTragetPath(t, backupFS, fileDirRoot+"/file_symlink", fileDir2+"/test02.txt")
+	symlinkMustExistWithTragetPath(t, backupFS, filepath.Join(fileDirRoot, "/file_symlink"), filepath.Join(fileDir2, "/test02.txt"))
 
-	symlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/file_symlink", fileDir+"/test01.txt")
+	symlinkMustExistWithTragetPath(t, backup, filepath.Join(fileDirRoot, "/file_symlink"), filepath.Join(fileDir, "/test01.txt"))
 
 	// create folder symlinks
-	createSymlink(t, backupFS, fileDir2, fileDirRoot+"/directory_symlink")
-	symlinkMustExistWithTragetPath(t, backupFS, fileDirRoot+"/directory_symlink", fileDir2)
-	symlinkMustExistWithTragetPath(t, backup, fileDirRoot+"/directory_symlink", fileDir)
+	createSymlink(t, backupFS, fileDir2, filepath.Join(fileDirRoot, "/directory_symlink"))
+	symlinkMustExistWithTragetPath(t, backupFS, filepath.Join(fileDirRoot, "/directory_symlink"), fileDir2)
+	symlinkMustExistWithTragetPath(t, backup, filepath.Join(fileDirRoot, "/directory_symlink"), fileDir)
 
-	createSymlink(t, backupFS, fileDir2+"/does_not_exist", "/to_be_removed_symlink")
+	createSymlink(t, backupFS, filepath.Join(fileDir2, "/does_not_exist"), "/to_be_removed_symlink")
 
 	err := backupFS.Rollback()
 	require.NoError(err)
 
 	// assert both base symlinks point to their respective previous paths
-	symlinkMustExistWithTragetPath(t, backupFS, fileDirRoot+"/file_symlink", fileDir+"/test01.txt")
-	symlinkMustExistWithTragetPath(t, backupFS, fileDirRoot+"/directory_symlink", fileDir)
+	symlinkMustExistWithTragetPath(t, backupFS, filepath.Join(fileDirRoot, "/file_symlink"), filepath.Join(fileDir, "/test01.txt"))
+	symlinkMustExistWithTragetPath(t, backupFS, filepath.Join(fileDirRoot, "/directory_symlink"), fileDir)
 
-	symlinkMustExistWithTragetPath(t, base, fileDirRoot+"/file_symlink", fileDir+"/test01.txt")
-	symlinkMustExistWithTragetPath(t, base, fileDirRoot+"/directory_symlink", fileDir)
+	symlinkMustExistWithTragetPath(t, base, filepath.Join(fileDirRoot, "/file_symlink"), filepath.Join(fileDir, "/test01.txt"))
+	symlinkMustExistWithTragetPath(t, base, filepath.Join(fileDirRoot, "/directory_symlink"), fileDir)
 
 	// never existed before, was created and then rolled back
 	mustNotLExist(t, backupFS, "/to_be_removed_symlink")
 
-	mustNotLExist(t, backup, fileDirRoot+"/file_symlink")
-	mustNotLExist(t, backup, fileDirRoot+"/directory_symlink")
+	mustNotLExist(t, backup, filepath.Join(fileDirRoot, "/file_symlink"))
+	mustNotLExist(t, backup, filepath.Join(fileDirRoot, "/directory_symlink"))
 
 	// compare initial state to state after rollback
 	mustEqualFSState(t, baseFSState, base, "/")
@@ -711,12 +683,10 @@ func TestBackupFS_Mkdir(t *testing.T) {
 	t.Parallel()
 
 	var (
-		require      = require.New(t)
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
+		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		// different number of file path separators
@@ -754,25 +724,61 @@ func TestBackupFS_Mkdir(t *testing.T) {
 	// compare initial state to state after rollback
 	mustEqualFSState(t, baseFSState, base, "/")
 	mustEqualFSState(t, backupFSState, backup, "/")
+}
 
+func TestBackupFS_MkdirAll(t *testing.T) {
+	t.Parallel()
+
+	var (
+		require = require.New(t)
+	)
+
+	_, base, backup, backupFS := NewTestBackupFS()
+
+	var (
+		// different number of file path separators
+		// while still having the same number of characters in the filepath
+		fileDirRoot = "/Program Data"
+		fileDir     = "/Program Data/001"
+		fileDir2    = "/Program Data/001/002"
+	)
+
+	// already existing files before we touched the filesystem
+	err := mkdir(t, base, fileDirRoot, 0755)
+	require.NoError(err)
+
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
+	// at this point writing operations must happen on backupFS
+	// and read operations should happen on any of the tree, base, backup or backupFS
+	mkdirAll(t, backupFS, fileDir2, 0755)
+	removeAll(t, backupFS, fileDir)
+
+	// ROLLBACK
+	err = backupFS.Rollback()
+	require.NoError(err)
+	// ROLLBACK
+
+	// compare initial state to state after rollback
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_Chmod(t *testing.T) {
 	t.Parallel()
 
 	var (
-		require      = require.New(t)
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
+		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		// different number of file path separators
 		// while still having the same number of characters in the filepath
 		fileDirRoot = "/test"
-		filePath    = fileDirRoot + "/test_file_chmod.txt"
+		filePath    = filepath.Join(fileDirRoot, "/test_file_chmod.txt")
 	)
 	createFile(t, base, filePath, "chmod test file")
 
@@ -821,7 +827,8 @@ func TestTime(t *testing.T) {
 // and not in memory
 func NewTempDirPrefixFS(rootDir string) *PrefixFS {
 	var osFS = NewOSFS()
-	tempDir, err := TempDir(osFS, rootDir, "")
+
+	tempDir, err := TempDir(osFS, rootDir, fmt.Sprintf("%s-", time.Now().Format("2006-01-02_15-04-05.000")))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -833,36 +840,48 @@ func NewTempDirPrefixFS(rootDir string) *PrefixFS {
 	return NewPrefixFS(volumeFS, tempDir)
 }
 
-func NewTestBackupFS(basePrefix, backupPrefix string) (root, base, backup FS, backupFS *BackupFS) {
+func NewTestBackupFS() (root, base, backup FS, backupFS *BackupFS) {
 	rootPath := CallerPathTmp()
 	root = NewTempDirPrefixFS(rootPath)
 
-	err := root.MkdirAll(basePrefix, 0700)
+	err := root.MkdirAll("/base", 0700)
 	if err != nil {
 		panic(err)
 	}
 
-	base = NewPrefixFS(root, basePrefix)
-
-	err = root.MkdirAll(backupPrefix, 0700)
+	err = root.MkdirAll("/base/backup", 0700)
 	if err != nil {
 		panic(err)
 	}
 
-	backup = NewPrefixFS(root, backupPrefix)
-	backupFS = NewBackupFS(base, backup)
+	backupFile := "/base/backup.file"
+	f, err := root.Create(backupFile)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	_, err = io.WriteString(f, "backup file")
+	if err != nil {
+		panic(err)
+	}
+
+	base = NewPrefixFS(root, "/base")
+	backup = NewPrefixFS(base, "/backup")
+
+	// hide backup locations in base filesystem
+	base = NewHiddenFS(base, "/backup", "/backup.file")
+	backupFS = NewBackupFS(
+		base,
+		backup,
+	)
 	return root, base, backup, backupFS
 }
 
 func TestCreateFileInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		originalLinkedDir   = "/usr/lib"
@@ -897,12 +916,7 @@ func TestCreateFileInSymlinkDir(t *testing.T) {
 func TestMkdirInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		originalLinkedDir   = "/usr/lib"
@@ -933,12 +947,7 @@ func TestMkdirInSymlinkDir(t *testing.T) {
 func TestRemoveDirInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, backup, backupFS := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, backup, backupFS := NewTestBackupFS()
 
 	var (
 		originalLinkedDir   = "/usr/lib"

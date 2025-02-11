@@ -11,12 +11,7 @@ import (
 func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, _, _ := NewTestBackupFS()
 
 	var (
 		originalSubDir   = "/usr/lib/systemd/system"
@@ -39,12 +34,7 @@ func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
 func TestResolveCircularSymlinkPath(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, _, _ := NewTestBackupFS()
 
 	var (
 		folders = "/usr/lib/systemd"
@@ -80,12 +70,7 @@ func TestResolveCircularSymlinkPath(t *testing.T) {
 func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, _, _ := NewTestBackupFS()
 
 	var (
 		originalLinkedDir   = "/usr/lib"
@@ -110,12 +95,7 @@ func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 func TestResolvePathWithRelativeSymlink(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, _, _ := NewTestBackupFS()
 
 	var (
 		originalLinkedDir   = "/usr/lib"
@@ -141,12 +121,7 @@ func TestResolvePathWithRelativeSymlink(t *testing.T) {
 func TestResolveFilePathWithRelativeSymlink(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-
-	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, _, _ := NewTestBackupFS()
 
 	var (
 		originalSubDir      = "/usr/lib/systemd/system"

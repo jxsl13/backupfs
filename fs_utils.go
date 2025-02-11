@@ -430,7 +430,7 @@ func resolvePathWithInfo(fsys resolverFS, filePath string) (resolvedFilePath str
 	}
 
 	accPaths := make([]string, 0, strings.Count(filePath, separator))
-	// collect all subdir segmrents
+	// collect all subdir segments
 	_, _ = IterateDirTree(filePath, func(subdirPath string) (bool, error) {
 		accPaths = append(accPaths, subdirPath)
 		return true, nil
