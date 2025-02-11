@@ -386,7 +386,9 @@ func (fsys *BackupFS) RemoveAll(name string) (err error) {
 
 	// does not exist or no access, nothing to do
 	fi, err := fsys.Lstat(resolvedName)
-	if err != nil {
+	if isNotFoundError(err) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
@@ -976,19 +978,25 @@ func (fsys *BackupFS) tryBackup(resolvedName string) (err error) {
 	if err != nil {
 		return err
 	}
-	if !needsBackup {
-		return nil
-	}
 
 	dirPath := resolvedName
-	if !info.IsDir() {
-		// is file, get dir
+	// (not found) or (found and not a directory), nil check not needed
+	if info == nil || !info.IsDir() {
+		// is file, symlink or unknown (because not found), backup directory tree
 		dirPath = filepath.Dir(dirPath)
 	}
 
+	// we also want to backup all parent directories
+	// in case that we did not find the file or directory
 	err = fsys.backupDirs(dirPath)
 	if err != nil {
 		return err
+	}
+
+	if !needsBackup {
+		// either not found or already backed up
+		// nothing to backup
+		return nil
 	}
 
 	fileMode := info.Mode()
@@ -1082,6 +1090,7 @@ func (fsys *BackupFS) backupRequired(resolvedName string) (info fs.FileInfo, req
 		// not found, no backup needed
 		return nil, false, nil
 	} else if err != nil {
+		// unexpected filesystem error
 		return nil, false, err
 	}
 

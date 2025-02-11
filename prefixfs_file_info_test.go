@@ -9,11 +9,7 @@ import (
 func TestPrefixFSFileInfoRootName(t *testing.T) {
 	t.Parallel()
 
-	var (
-		basePrefix   = "/base"
-		backupPrefix = "/backup"
-	)
-	_, base, _, _ := NewTestBackupFS(basePrefix, backupPrefix)
+	_, base, _, _ := NewTestBackupFS()
 
 	rootDir := separator
 
