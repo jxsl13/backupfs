@@ -1,6 +1,7 @@
 package backupfs
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ func (v *VolumeFS) prefixPath(name string) (string, error) {
 
 	volumePrefix := filepath.VolumeName(name)
 	if volumePrefix != "" {
-		return "", syscall.EPERM
+		return "", fmt.Errorf("path must not contain a volume prefix: %s: %w", volumePrefix, syscall.EPERM)
 	}
 
 	return filepath.Clean(filepath.Join(v.volume, name)), nil

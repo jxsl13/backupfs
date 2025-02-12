@@ -1,6 +1,7 @@
 package backupfs
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,11 +19,23 @@ var (
 // the provided prefix.
 // the existence of the prefixPath existing is hidden away (errors might show full paths).
 // The prefixPath is seen as the root directory.
-func NewPrefixFS(fs FS, prefixPath string) *PrefixFS {
+// The prefix path MUST NOT contain a Windows (OS) volume prefix like C:, D:, etc.
+// Wrap the base filesystem in a VolumeFS if you want to target a specific volume.
+func NewPrefixFS(fsys FS, prefixPath string) (_ *PrefixFS, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to create PrefixFS: %w", err)
+		}
+	}()
+	volumeName := filepath.VolumeName(prefixPath)
+	if volumeName != "" {
+		return nil, fmt.Errorf("prefix path must not contain a volume prefix: %s (has volume prefix '%s')", prefixPath, volumeName)
+	}
+
 	return &PrefixFS{
 		prefix: filepath.Clean(prefixPath),
-		base:   fs,
-	}
+		base:   fsys,
+	}, nil
 }
 
 // PrefixFS, contrary to BasePathFS, does abstract away the existence of a base path.
