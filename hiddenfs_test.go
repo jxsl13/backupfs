@@ -5,8 +5,46 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRelCantMakeRelative(t *testing.T) {
+	t.Parallel()
+
+	rootPath := CallerPathTmp(-1)
+	root := NewTempDirPrefixFS(rootPath)
+
+	// "c:\\.......\\backup\\0194f97d-930b-75b5-b09a-db550cd729c1"
+	// "c:\\.......\\backup\\0194f97d-930b-75b5-b09a-db550cd729c1.json"
+	// fsys.Lstat("\\")
+
+	hiddenDir := filepath.Join(rootPath, "/backup/0194f97d-930b-75b5-b09a-db550cd729c1")
+	hiddenFile := filepath.Join(rootPath, "/backup/0194f97d-930b-75b5-b09a-db550cd729c1.json")
+
+	// we MUST NOT pass a volume prefix to the HiddenFS
+	hiddenDir = TrimVolume(hiddenDir)
+	hiddenFile = TrimVolume(hiddenFile)
+
+	hfs, err := NewHiddenFS(
+		root,
+		hiddenDir,
+		hiddenFile,
+	)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	// lstat C:: hidden check failed: is_hidden C:.: Rel: can't make C:. relative to C:\A\B\C\D\E\file.json
+	// this error is not supposed to happen here
+	_, err = hfs.Lstat("/")
+	if !isNotFoundError(err) {
+		if !assert.NoError(t, err) {
+			return
+		}
+	}
+
+}
 
 func TestHiddenFS_CountFiles(t *testing.T) {
 	t.Parallel()
@@ -204,8 +242,15 @@ func newTestTempDirHiddenFS(caller int, hiddenPaths ...string) (base FS, hfs *Hi
 	if err != nil {
 		panic(err)
 	}
-	base = NewPrefixFS(root, hidden)
-	return base, NewHiddenFS(base, hiddenPaths...)
+	base, err = NewPrefixFS(root, hidden)
+	if err != nil {
+		panic(err) // not supposed to happen, because /hidden has no volume prefix
+	}
+	hfs, err = NewHiddenFS(base, hiddenPaths...)
+	if err != nil {
+		panic(err)
+	}
+	return base, hfs
 }
 
 func SetupTempDirHiddenFSTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base FS, fs *HiddenFS) {

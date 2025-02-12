@@ -833,11 +833,20 @@ func NewTempDirPrefixFS(rootDir string) *PrefixFS {
 		log.Fatalln(err)
 	}
 
-	volume := filepath.VolumeName(tempDir)
-	volumeFS := NewVolumeFS(volume, osFS)
-	tempDir = TrimVolume(tempDir)
+	var volumeFS FS = osFS
 
-	return NewPrefixFS(volumeFS, tempDir)
+	volume := filepath.VolumeName(tempDir)
+	if volume != "" {
+		// on linux we do not need this branch
+		volumeFS = NewVolumeFS(volume, osFS)
+		tempDir = TrimVolume(tempDir)
+	}
+
+	pfs, err := NewPrefixFS(volumeFS, tempDir)
+	if err != nil {
+		panic(err)
+	}
+	return pfs
 }
 
 func NewTestBackupFS() (root, base, backup FS, backupFS *BackupFS) {
@@ -866,15 +875,25 @@ func NewTestBackupFS() (root, base, backup FS, backupFS *BackupFS) {
 		panic(err)
 	}
 
-	base = NewPrefixFS(root, "/base")
-	backup = NewPrefixFS(base, "/backup")
+	base, err = NewPrefixFS(root, "/base")
+	if err != nil {
+		panic(err) // should not happen, becaus epath is not prefixed with a volume
+	}
+	backup, err = NewPrefixFS(base, "/backup")
+	if err != nil {
+		panic(err) // should not happen, becaus epath is not prefixed with a volume
+	}
 
 	// hide backup locations in base filesystem
-	base = NewHiddenFS(base, "/backup", "/backup.file")
+	base, err = NewHiddenFS(base, "/backup", "/backup.file")
+	if err != nil {
+		panic(err)
+	}
 	backupFS = NewBackupFS(
 		base,
 		backup,
 	)
+
 	return root, base, backup, backupFS
 }
 

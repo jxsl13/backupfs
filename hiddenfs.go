@@ -26,18 +26,29 @@ var (
 )
 
 // NewHiddenFS hides away anthing beneath the specified paths.
-func NewHiddenFS(base FS, hiddenPaths ...string) *HiddenFS {
+// Hidden paths MUST NOT contain a volume prefix like C:, D:, etc.
+// Wrap the base filesystem in a VolumeFS if you want to target a specific volume.
+func NewHiddenFS(base FS, hiddenPaths ...string) (_ *HiddenFS, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to create HiddenFS: %w", err)
+		}
+	}()
 	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 
 	for _, p := range hiddenPaths {
-		normalizedHiddenPaths = append(normalizedHiddenPaths, filepath.Clean(filepath.FromSlash(p)))
+		normalizedPath := filepath.Clean(filepath.FromSlash(p))
+		if normalizedPath != TrimVolume(normalizedPath) {
+			return nil, fmt.Errorf("hidden path must not contain a volume prefix: %s (has volume prefix '%s')", p, filepath.VolumeName(normalizedPath))
+		}
+		normalizedHiddenPaths = append(normalizedHiddenPaths, normalizedPath)
 	}
 
 	sort.Sort(ByMostFilePathSeparators(normalizedHiddenPaths))
 	return &HiddenFS{
 		base:        base,
 		hiddenPaths: normalizedHiddenPaths,
-	}
+	}, nil
 }
 
 // HiddenFS hides everything inside of a list of directory prefixes from the user.

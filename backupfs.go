@@ -38,9 +38,27 @@ func New(backupLocation string, opts ...BackupFSOption) *BackupFS {
 // The backup location is hidden from the user's access i norder to prevent infinite backup recursions.
 // The returned BackupFS is OS-independent and can also be used with Windows paths.
 func NewWithFS(baseFS FS, backupLocation string, opts ...BackupFSOption) *BackupFS {
+
+	volumeFS := baseFS
+	volumeName := filepath.VolumeName(backupLocation)
+	if volumeName != "" {
+		volumeFS = NewVolumeFS(volumeName, baseFS)
+		backupLocation = backupLocation[len(volumeName):] // trim volume
+	}
+
+	hiddenFS, err := NewHiddenFS(volumeFS, backupLocation)
+	if err != nil {
+		panic(err) // not supposed to happen, because we trim the volume prefix above
+	}
+
+	backupFS, err := NewPrefixFS(volumeFS, backupLocation)
+	if err != nil {
+		panic(err) // not supposed to happen, because we trim the volume prefix above
+	}
+
 	fsys := NewBackupFS(
-		NewHiddenFS(baseFS, backupLocation),
-		NewPrefixFS(baseFS, backupLocation),
+		hiddenFS,
+		backupFS,
 		// put our default option first in order for it to be overwritable later
 		append([]BackupFSOption{ /* default options that can be overwritten afterwards */ }, opts...)...,
 	)
