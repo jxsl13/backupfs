@@ -42,7 +42,7 @@ func (hf *hiddenFile) Readdir(count int) ([]fs.FileInfo, error) {
 		}
 
 		for _, info := range infos {
-			hidden, err := isHidden(info.Name(), hf.hiddenPaths)
+			hidden, err := isHidden(filepath.Join(hf.filePath, info.Name()), hf.hiddenPaths)
 			if err != nil {
 				return nil, err
 			}
@@ -62,7 +62,8 @@ func (hf *hiddenFile) Readdir(count int) ([]fs.FileInfo, error) {
 		}
 
 		for _, info := range infos {
-			hidden, err := isHidden(filepath.Join(hf.filePath, info.Name()), hf.hiddenPaths)
+			fullPath := filepath.Join(hf.filePath, info.Name())
+			hidden, err := isHidden(fullPath, hf.hiddenPaths)
 			if err != nil {
 				return nil, err
 			}
