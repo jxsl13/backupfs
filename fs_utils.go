@@ -92,7 +92,7 @@ func ignoreChtimesError(err error) error {
 	}
 }
 
-func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
+func copyDir(fsys FS, name string, info fs.FileInfo) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("%w: %s: %v", errCopyDirFailed, name, err)
@@ -115,13 +115,13 @@ func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
 	}
 
 	// try to create all dirs as somone might have tempered with the file system
-	targetMode := info.Mode()
-	err = fs.MkdirAll(name, targetMode.Perm())
+	targetMode := info.Mode() & (fs.ModeSticky | fs.ModePerm)
+	err = fsys.MkdirAll(name, targetMode)
 	if err != nil {
 		return err
 	}
 
-	newDirInfo, err := fs.Lstat(name)
+	newDirInfo, err := fsys.Lstat(name)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errCopyDirFailed, err)
 	}
@@ -129,7 +129,7 @@ func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
 	currentMode := newDirInfo.Mode()
 
 	if !equalMode(currentMode, targetMode) {
-		err = fs.Chmod(name, targetMode)
+		err = fsys.Chmod(name, targetMode)
 		if err != nil {
 			// TODO: do we want to fail here?
 			return err
@@ -139,7 +139,7 @@ func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
 	targetModTime := info.ModTime()
 	currentModTime := newDirInfo.ModTime()
 	if !currentModTime.Equal(targetModTime) {
-		err = ignoreChtimesError(fs.Chtimes(name, targetModTime, targetModTime))
+		err = ignoreChtimesError(fsys.Chtimes(name, targetModTime, targetModTime))
 		if err != nil {
 			return err
 		}
@@ -147,7 +147,7 @@ func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
 
 	// https://pkg.go.dev/os#Chown
 	// Windows & Plan9 not supported
-	err = ignoreChownError(chown(info, name, fs))
+	err = ignoreChownError(chown(info, name, fsys))
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func copyDir(fs FS, name string, info fs.FileInfo) (err error) {
 	return nil
 }
 
-func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error) {
+func copyFile(fsys FS, name string, info fs.FileInfo, sourceFile File) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("%w: %s: %v", errCopyFileFailed, name, err)
@@ -168,19 +168,19 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error)
 	//
 	targetMode := info.Mode()
 
-	err = writeFile(fs, name, targetMode.Perm(), sourceFile)
+	err = writeFile(fsys, name, targetMode.Perm(), sourceFile)
 	if err != nil {
 		return err
 	}
 
-	newFileInfo, err := fs.Lstat(name)
+	newFileInfo, err := fsys.Lstat(name)
 	if err != nil {
 		return err
 	}
 
 	if !equalMode(newFileInfo.Mode(), targetMode) {
 		// not equal, update it
-		err = fs.Chmod(name, targetMode)
+		err = fsys.Chmod(name, targetMode)
 		if err != nil {
 			return err
 		}
@@ -190,7 +190,7 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error)
 	currentModTime := newFileInfo.ModTime()
 
 	if !currentModTime.Equal(targetModTime) {
-		err = ignoreChtimesError(fs.Chtimes(name, targetModTime, targetModTime))
+		err = ignoreChtimesError(fsys.Chtimes(name, targetModTime, targetModTime))
 		if err != nil {
 			return err
 		}
@@ -199,7 +199,7 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error)
 	// might cause a windows error that this function is not implemented by the OS
 	// in a unix fassion
 	// permission and not implemented errors are ignored
-	err = ignoreChownError(chown(info, name, fs))
+	err = ignoreChownError(chown(info, name, fsys))
 	if err != nil {
 		return err
 	}
@@ -207,9 +207,9 @@ func copyFile(fs FS, name string, info fs.FileInfo, sourceFile File) (err error)
 	return nil
 }
 
-func writeFile(fs FS, name string, perm fs.FileMode, content io.Reader) (err error) {
+func writeFile(fsys FS, name string, perm fs.FileMode, content io.Reader) (err error) {
 	// same as create but with custom permissions
-	file, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm.Perm())
+	file, err := fsys.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm.Perm())
 	if err != nil {
 		return err
 	}
@@ -250,9 +250,9 @@ func copySymlink(source, target FS, name string, info fs.FileInfo) (err error) {
 
 // Chown is an operating system dependent implementation.
 // only tries to change owner in cas ethat the owner differs
-func chown(from fs.FileInfo, toName string, fs FS) error {
+func chown(from fs.FileInfo, toName string, fsys FS) error {
 
-	oldOwnerFi, err := fs.Lstat(toName)
+	oldOwnerFi, err := fsys.Lstat(toName)
 	if err != nil {
 		return fmt.Errorf("lstat for chown failed: %w", err)
 	}
@@ -265,7 +265,7 @@ func chown(from fs.FileInfo, toName string, fs FS) error {
 
 	// only update when something changed
 	if oldUid != newUid || oldGid != newGid {
-		err = fs.Chown(toName, toUID(from), toGID(from))
+		err = fsys.Chown(toName, toUID(from), toGID(from))
 		if err != nil {
 			return err
 		}
