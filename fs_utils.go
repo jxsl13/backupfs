@@ -115,7 +115,7 @@ func copyDir(fsys FS, name string, info fs.FileInfo) (err error) {
 	}
 
 	// try to create all dirs as somone might have tempered with the file system
-	targetMode := info.Mode() & (fs.ModeSticky | fs.ModePerm)
+	targetMode := info.Mode() & chmodBits
 	err = fsys.MkdirAll(name, targetMode)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func copyDir(fsys FS, name string, info fs.FileInfo) (err error) {
 		return fmt.Errorf("%w: %v", errCopyDirFailed, err)
 	}
 
-	currentMode := newDirInfo.Mode()
+	currentMode := newDirInfo.Mode() & chmodBits
 
 	if !equalMode(currentMode, targetMode) {
 		err = fsys.Chmod(name, targetMode)
@@ -166,9 +166,9 @@ func copyFile(fsys FS, name string, info fs.FileInfo, sourceFile File) (err erro
 		return fmt.Errorf("%w: %s", errFileInfoExpected, name)
 	}
 	//
-	targetMode := info.Mode()
+	targetMode := info.Mode() & chmodBits
 
-	err = writeFile(fsys, name, targetMode.Perm(), sourceFile)
+	err = writeFile(fsys, name, targetMode, sourceFile)
 	if err != nil {
 		return err
 	}
@@ -178,7 +178,8 @@ func copyFile(fsys FS, name string, info fs.FileInfo, sourceFile File) (err erro
 		return err
 	}
 
-	if !equalMode(newFileInfo.Mode(), targetMode) {
+	newMode := newFileInfo.Mode() & chmodBits
+	if !equalMode(newMode, targetMode) {
 		// not equal, update it
 		err = fsys.Chmod(name, targetMode)
 		if err != nil {
