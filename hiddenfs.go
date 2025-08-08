@@ -38,9 +38,6 @@ func NewHiddenFS(base FS, hiddenPaths ...string) (_ *HiddenFS, err error) {
 
 	for _, p := range hiddenPaths {
 		normalizedPath := filepath.Clean(filepath.FromSlash(p))
-		if normalizedPath != TrimVolume(normalizedPath) {
-			return nil, fmt.Errorf("hidden path must not contain a volume prefix: %s (has volume prefix '%s')", p, filepath.VolumeName(normalizedPath))
-		}
 		normalizedHiddenPaths = append(normalizedHiddenPaths, normalizedPath)
 	}
 
