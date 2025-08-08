@@ -27,10 +27,6 @@ func NewPrefixFS(fsys FS, prefixPath string) (_ *PrefixFS, err error) {
 			err = fmt.Errorf("failed to create PrefixFS: %w", err)
 		}
 	}()
-	volumeName := filepath.VolumeName(prefixPath)
-	if volumeName != "" {
-		return nil, fmt.Errorf("prefix path must not contain a volume prefix: %s (has volume prefix '%s')", prefixPath, volumeName)
-	}
 
 	return &PrefixFS{
 		prefix: filepath.Clean(prefixPath),
