@@ -6,14 +6,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestHiddenFS_WindowsAbsolutePaths tests HiddenFS functionality with absolute Windows paths
 func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 	t.Parallel()
-
-	require := require.New(t)
 
 	// Create temporary directory for testing
 	tempDir := CallerPathTmp()
@@ -23,7 +20,9 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 
 	// Create a prefix filesystem under the temp directory
 	baseFS, err := NewPrefixFS(osfs, tempDir)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Define relative Windows paths starting with /
 	relHiddenDirParent := "/backup"
@@ -32,71 +31,105 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 
 	// Convert to absolute Windows paths using filepath.Abs and filepath.FromSlash
 	absHiddenDirParent, err := filepath.Abs(filepath.FromSlash(relHiddenDirParent))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	absHiddenDir, err := filepath.Abs(filepath.FromSlash(relHiddenDir))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create the hidden filesystem - use full absolute Windows path with volume prefix
 	// This tests HiddenFS ability to handle paths like C:\backup\hidden
 	hfs, err := NewHiddenFS(baseFS, absHiddenDir)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Setup the test environment using absolute paths
 	err = baseFS.MkdirAll(absHiddenDirParent, 0775)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	err = baseFS.MkdirAll(absHiddenDir, 0775)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create a hidden file
 	hiddenFilePath := filepath.Join(absHiddenDir, hiddenFile)
 	file, err := baseFS.Create(hiddenFilePath)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	_, err = file.Write([]byte("secret content"))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	err = file.Close()
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Test that the hidden directory appears to not exist from HiddenFS perspective
 	_, err = hfs.Stat(absHiddenDir)
-	require.ErrorIs(err, os.ErrNotExist)
+	if !assert.ErrorIs(t, err, os.ErrNotExist) {
+		return
+	}
 
 	// Test that files in the hidden directory cannot be accessed
 	_, err = hfs.Open(hiddenFilePath)
-	require.ErrorIs(err, os.ErrNotExist)
+	if !assert.ErrorIs(t, err, os.ErrNotExist) {
+		return
+	}
 
 	// Test that we cannot create files in the hidden directory
 	_, err = hfs.Create(filepath.Join(absHiddenDir, "new_file.txt"))
-	require.ErrorIs(err, os.ErrPermission)
+	if !assert.ErrorIs(t, err, os.ErrPermission) {
+		return
+	}
 
 	// Test that we can create files outside the hidden directory
 	visibleFile := filepath.Join(absHiddenDirParent, "visible.txt")
 	file, err = hfs.Create(visibleFile)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	_, err = file.Write([]byte("visible content"))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	err = file.Close()
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Verify the visible file exists
 	_, err = hfs.Stat(visibleFile)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Test listing directory contents - hidden directory should not appear
 	entries, err := readDir(hfs, absHiddenDirParent)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Should only see the visible file, not the hidden directory
-	require.Len(entries, 1)
-	require.Equal("visible.txt", entries[0].Name())
+	if !assert.Len(t, entries, 1) {
+		return
+	}
+	if !assert.Equal(t, "visible.txt", entries[0].Name()) {
+		return
+	}
 }
 
 // TestHiddenFS_WindowsSystemPaths tests HiddenFS with Windows system-like absolute paths
 func TestHiddenFS_WindowsSystemPaths(t *testing.T) {
 	t.Parallel()
-
-	require := require.New(t)
 
 	// Create a temporary directory
 	tempDir := CallerPathTmp()
@@ -106,7 +139,9 @@ func TestHiddenFS_WindowsSystemPaths(t *testing.T) {
 
 	// Create prefix filesystem
 	baseFS, err := NewPrefixFS(osfs, tempDir)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Use Windows system-like relative paths
 	relSystemDir := "/Windows/System32/config"
@@ -114,25 +149,37 @@ func TestHiddenFS_WindowsSystemPaths(t *testing.T) {
 
 	// Convert to absolute Windows path
 	absSystemDir, err := filepath.Abs(filepath.FromSlash(relSystemDir))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create hidden filesystem using full absolute Windows path with volume prefix
 	// This tests the scenario like C:\Windows\System32\config
 	hfs, err := NewHiddenFS(baseFS, absSystemDir)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Setup test directory structure using absolute path
 	err = baseFS.MkdirAll(absSystemDir, 0775)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create hidden file
 	hiddenFilePath := filepath.Join(absSystemDir, systemFile)
 	file, err := baseFS.Create(hiddenFilePath)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	_, err = file.Write([]byte("system data"))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	err = file.Close()
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Test operations on hidden paths
 	testHiddenOperations(t, hfs, baseFS, absSystemDir, hiddenFilePath)
@@ -149,7 +196,9 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 	osfs := NewOSFS()
 
 	baseFS, err := NewPrefixFS(osfs, tempDir)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Define relative Windows paths
 	relHiddenDir := "/system/hidden"
@@ -157,43 +206,63 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 
 	// Convert to absolute Windows paths
 	absHiddenDir, err := filepath.Abs(filepath.FromSlash(relHiddenDir))
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	absVisibleDir, err := filepath.Abs(filepath.FromSlash(relVisibleDir))
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create HiddenFS using full absolute Windows path with volume prefix
 	// This tests symlink operations with paths like C:\system\hidden
 	hfs, err := NewHiddenFS(baseFS, absHiddenDir)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Setup directories using absolute paths
 	err = baseFS.MkdirAll(absHiddenDir, 0775)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	err = baseFS.MkdirAll(absVisibleDir, 0775)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create files
 	hiddenFile := filepath.Join(absHiddenDir, "secret.txt")
 	visibleFile := filepath.Join(absVisibleDir, "public.txt")
 
 	file, err := baseFS.Create(hiddenFile)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	err = file.Close()
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	file, err = baseFS.Create(visibleFile)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	err = file.Close()
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Test symlink operations
 	symlinkPath := filepath.Join(absVisibleDir, "link.txt")
 
 	// Should not be able to create symlink to hidden file
 	err = hfs.Symlink(hiddenFile, symlinkPath)
-	assert.ErrorIs(t, err, os.ErrPermission)
+	if !assert.ErrorIs(t, err, os.ErrPermission) {
+		return
+	}
 
 	// Should be able to create symlink to visible file using relative path
 	validSymlinkPath := symlinkPath + "-valid"
@@ -201,15 +270,21 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 	_ = hfs.Remove(validSymlinkPath) // Ignore error if file doesn't exist
 	
 	err = hfs.Symlink("public.txt", validSymlinkPath)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Verify symlink exists
 	_, err = hfs.Lstat(validSymlinkPath)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Clean up created symlink after test
 	err = hfs.Remove(validSymlinkPath)
-	assert.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 }
 
 // TestHiddenFS_WindowsVolumePathIssue tests the specific issue with Windows volume paths
@@ -217,15 +292,15 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 func TestHiddenFS_WindowsVolumePathIssue(t *testing.T) {
 	t.Parallel()
 
-	require := require.New(t)
-
 	// Create temporary directory
 	tempDir := CallerPathTmp()
 
 	// Create base OSFS
 	osfs := NewOSFS()
 	baseFS, err := NewPrefixFS(osfs, tempDir)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Simulate the problematic path scenario
 	relDBADir := "/DBA"
@@ -234,86 +309,124 @@ func TestHiddenFS_WindowsVolumePathIssue(t *testing.T) {
 
 	// Convert to absolute Windows paths - this will create paths like C:\DBA
 	absDBADir, err := filepath.Abs(filepath.FromSlash(relDBADir))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	absBackupDir, err := filepath.Abs(filepath.FromSlash(relBackupDir))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create HiddenFS with the backup directory as hidden - using full absolute path with volume prefix
 	// This should handle C:\DBA\agent\runtime\backups without the "can't make C:. relative" error
 	hfs, err := NewHiddenFS(baseFS, absBackupDir)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Setup directory structure
 	err = baseFS.MkdirAll(absBackupDir, 0775)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Create the backup file that should be hidden
 	backupFilePath := filepath.Join(absBackupDir, backupFile)
 	file, err := baseFS.Create(backupFilePath)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	_, err = file.Write([]byte("backup data"))
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	err = file.Close()
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Test Lstat on root "/" - this was part of the original error scenario
 	_, err = hfs.Lstat("/")
 	if err != nil && !isNotFoundError(err) {
-		require.NoError(err, "Lstat on root should not fail with volume path errors")
+		if !assert.NoError(t, err, "Lstat on root should not fail with volume path errors") {
+			return
+		}
 	}
 
 	// Test operations on the DBA directory (should be visible)
 	_, err = hfs.Stat(absDBADir)
-	require.NoError(err, "DBA directory should be visible")
+	if !assert.NoError(t, err, "DBA directory should be visible") {
+		return
+	}
 
 	// Test that the backup directory is hidden
 	_, err = hfs.Stat(absBackupDir)
-	require.ErrorIs(err, os.ErrNotExist, "Backup directory should be hidden")
+	if !assert.ErrorIs(t, err, os.ErrNotExist, "Backup directory should be hidden") {
+		return
+	}
 
 	// Test that the backup file is hidden
 	_, err = hfs.Open(backupFilePath)
-	require.ErrorIs(err, os.ErrNotExist, "Backup file should be hidden")
+	if !assert.ErrorIs(t, err, os.ErrNotExist, "Backup file should be hidden") {
+		return
+	}
 
 	// Create a visible file in the DBA directory
 	visibleFile := filepath.Join(absDBADir, "visible.txt")
 	file, err = hfs.Create(visibleFile)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 	err = file.Close()
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Verify the visible file exists
 	_, err = hfs.Stat(visibleFile)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 }
 
 // helper function to test hidden operations
 func testHiddenOperations(t *testing.T, hfs *HiddenFS, baseFS FS, hiddenDir, hiddenFile string) {
-	require := require.New(t)
-
 	// Hidden directory should not be visible
 	_, err := hfs.Stat(hiddenDir)
-	require.ErrorIs(err, os.ErrNotExist)
+	if !assert.ErrorIs(t, err, os.ErrNotExist) {
+		return
+	}
 
 	// Hidden file should not be accessible
 	_, err = hfs.Open(hiddenFile)
-	require.ErrorIs(err, os.ErrNotExist)
+	if !assert.ErrorIs(t, err, os.ErrNotExist) {
+		return
+	}
 
 	// Cannot create files in hidden directory
 	_, err = hfs.Create(filepath.Join(hiddenDir, "new.txt"))
-	require.ErrorIs(err, os.ErrPermission)
+	if !assert.ErrorIs(t, err, os.ErrPermission) {
+		return
+	}
 
 	// Cannot remove hidden directory
 	err = hfs.Remove(hiddenDir)
-	require.ErrorIs(err, os.ErrNotExist)
+	if !assert.ErrorIs(t, err, os.ErrNotExist) {
+		return
+	}
 
 	// Cannot make directories in hidden path
 	err = hfs.Mkdir(filepath.Join(hiddenDir, "subdir"), 0775)
-	require.ErrorIs(err, os.ErrPermission)
+	if !assert.ErrorIs(t, err, os.ErrPermission) {
+		return
+	}
 
 	// Verify files still exist in base filesystem
 	_, err = baseFS.Stat(hiddenFile)
-	require.NoError(err)
+	if !assert.NoError(t, err) {
+		return
+	}
 }
 
 // helper function to read directory contents
