@@ -16,10 +16,10 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 
 	// Create temporary directory for testing
 	tempDir := CallerPathTmp()
-	
+
 	// Create base OSFS
 	osfs := NewOSFS()
-	
+
 	// Create a prefix filesystem under the temp directory
 	baseFS, err := NewPrefixFS(osfs, tempDir)
 	require.NoError(err)
@@ -32,7 +32,7 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 	// Convert to absolute Windows paths using filepath.Abs and filepath.FromSlash
 	absHiddenDirParent, err := filepath.Abs(filepath.FromSlash(relHiddenDirParent))
 	require.NoError(err)
-	
+
 	absHiddenDir, err := filepath.Abs(filepath.FromSlash(relHiddenDir))
 	require.NoError(err)
 
@@ -46,7 +46,7 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 	// Setup the test environment using absolute paths
 	err = baseFS.MkdirAll(absHiddenDirParent, 0775)
 	require.NoError(err)
-	
+
 	err = baseFS.MkdirAll(absHiddenDir, 0775)
 	require.NoError(err)
 
@@ -87,7 +87,7 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 	// Test listing directory contents - hidden directory should not appear
 	entries, err := readDir(hfs, absHiddenDirParent)
 	require.NoError(err)
-	
+
 	// Should only see the visible file, not the hidden directory
 	require.Len(entries, 1)
 	require.Equal("visible.txt", entries[0].Name())
@@ -104,7 +104,7 @@ func TestHiddenFS_WindowsSystemPaths(t *testing.T) {
 
 	// Create base OSFS
 	osfs := NewOSFS()
-	
+
 	// Create prefix filesystem
 	baseFS, err := NewPrefixFS(osfs, tempDir)
 	require.NoError(err)
@@ -152,24 +152,24 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 
 	// Setup OSFS
 	osfs := NewOSFS()
-	
+
 	baseFS, err := NewPrefixFS(osfs, tempDir)
 	require.NoError(err)
 
 	// Define relative Windows paths
 	relHiddenDir := "/system/hidden"
 	relVisibleDir := "/system/visible"
-	
+
 	// Convert to absolute Windows paths
 	absHiddenDir, err := filepath.Abs(filepath.FromSlash(relHiddenDir))
 	require.NoError(err)
-	
+
 	absVisibleDir, err := filepath.Abs(filepath.FromSlash(relVisibleDir))
 	require.NoError(err)
 
 	// For HiddenFS, trim volume prefix
 	hiddenDirForHFS := TrimVolume(absHiddenDir)
-	
+
 	// Create HiddenFS
 	hfs, err := NewHiddenFS(baseFS, hiddenDirForHFS)
 	require.NoError(err)
@@ -177,14 +177,14 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 	// Setup directories using absolute paths
 	err = baseFS.MkdirAll(absHiddenDir, 0775)
 	require.NoError(err)
-	
+
 	err = baseFS.MkdirAll(absVisibleDir, 0775)
 	require.NoError(err)
 
 	// Create files
 	hiddenFile := filepath.Join(absHiddenDir, "secret.txt")
 	visibleFile := filepath.Join(absVisibleDir, "public.txt")
-	
+
 	file, err := baseFS.Create(hiddenFile)
 	require.NoError(err)
 	err = file.Close()
@@ -248,7 +248,9 @@ func readDir(fsys FS, dirname string) ([]os.DirEntry, error) {
 	}
 	defer file.Close()
 
-	if dirReader, ok := file.(interface{ ReadDir(int) ([]os.DirEntry, error) }); ok {
+	if dirReader, ok := file.(interface {
+		ReadDir(int) ([]os.DirEntry, error)
+	}); ok {
 		return dirReader.ReadDir(-1)
 	}
 
