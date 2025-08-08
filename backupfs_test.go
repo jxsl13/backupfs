@@ -22,7 +22,8 @@ func TestBackupFS_Create(t *testing.T) {
 
 	root, base, backup, backupFS := NewTestBackupFS()
 	defer func() {
-		require.NoError(t, root.RemoveAll("/"))
+		// Clean up by removing the contents, not the root directory itself
+		require.NoError(t, root.RemoveAll("/base"))
 	}()
 
 	var (

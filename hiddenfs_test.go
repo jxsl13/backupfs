@@ -254,8 +254,8 @@ func newTestTempDirHiddenFS(caller int, hiddenPaths ...string) (base FS, hfs *Hi
 }
 
 func SetupTempDirHiddenFSTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base FS, fs *HiddenFS) {
-	hiddenDirParent = "/var/opt"
-	hiddenDir = "/var/opt/backups"
+	hiddenDirParent = filepath.FromSlash("/var/opt")
+	hiddenDir = filepath.FromSlash("/var/opt/backups")
 	hiddenFile = "hidden_file.txt"
 
 	// prepare base filesystem before using the hidden fs layer

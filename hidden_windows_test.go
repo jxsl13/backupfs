@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -141,8 +142,6 @@ func TestHiddenFS_WindowsSystemPaths(t *testing.T) {
 func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 	t.Parallel()
 
-	require := require.New(t)
-
 	// Create temporary directory
 	tempDir := CallerPathTmp()
 
@@ -150,7 +149,7 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 	osfs := NewOSFS()
 
 	baseFS, err := NewPrefixFS(osfs, tempDir)
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	// Define relative Windows paths
 	relHiddenDir := "/system/hidden"
@@ -158,51 +157,59 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 
 	// Convert to absolute Windows paths
 	absHiddenDir, err := filepath.Abs(filepath.FromSlash(relHiddenDir))
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	absVisibleDir, err := filepath.Abs(filepath.FromSlash(relVisibleDir))
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	// Create HiddenFS using full absolute Windows path with volume prefix
 	// This tests symlink operations with paths like C:\system\hidden
 	hfs, err := NewHiddenFS(baseFS, absHiddenDir)
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	// Setup directories using absolute paths
 	err = baseFS.MkdirAll(absHiddenDir, 0775)
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	err = baseFS.MkdirAll(absVisibleDir, 0775)
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	// Create files
 	hiddenFile := filepath.Join(absHiddenDir, "secret.txt")
 	visibleFile := filepath.Join(absVisibleDir, "public.txt")
 
 	file, err := baseFS.Create(hiddenFile)
-	require.NoError(err)
+	assert.NoError(t, err)
 	err = file.Close()
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	file, err = baseFS.Create(visibleFile)
-	require.NoError(err)
+	assert.NoError(t, err)
 	err = file.Close()
-	require.NoError(err)
+	assert.NoError(t, err)
 
 	// Test symlink operations
 	symlinkPath := filepath.Join(absVisibleDir, "link.txt")
 
 	// Should not be able to create symlink to hidden file
 	err = hfs.Symlink(hiddenFile, symlinkPath)
-	require.ErrorIs(err, os.ErrPermission)
+	assert.ErrorIs(t, err, os.ErrPermission)
 
 	// Should be able to create symlink to visible file using relative path
-	err = hfs.Symlink("public.txt", symlinkPath+"-valid")
-	require.NoError(err)
+	validSymlinkPath := symlinkPath + "-valid"
+	// Remove any existing symlink from previous test runs
+	_ = hfs.Remove(validSymlinkPath) // Ignore error if file doesn't exist
+	
+	err = hfs.Symlink("public.txt", validSymlinkPath)
+	assert.NoError(t, err)
 
 	// Verify symlink exists
-	_, err = hfs.Lstat(symlinkPath + "-valid")
-	require.NoError(err)
+	_, err = hfs.Lstat(validSymlinkPath)
+	assert.NoError(t, err)
+
+	// Clean up created symlink after test
+	err = hfs.Remove(validSymlinkPath)
+	assert.NoError(t, err)
 }
 
 // TestHiddenFS_WindowsVolumePathIssue tests the specific issue with Windows volume paths

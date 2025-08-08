@@ -143,6 +143,12 @@ func (s *PrefixFS) Remove(name string) error {
 		return &fs.PathError{Op: "remove", Path: name, Err: err}
 	}
 
+	// Prevent removing the root directory of the PrefixFS
+	// This would make the filesystem inconsistent
+	if path == s.prefix {
+		return &fs.PathError{Op: "remove", Path: name, Err: syscall.EPERM}
+	}
+
 	err = s.base.Remove(path)
 	if err != nil {
 		return err
@@ -157,6 +163,13 @@ func (s *PrefixFS) RemoveAll(name string) error {
 	if err != nil {
 		return &fs.PathError{Op: "remove_all", Path: name, Err: err}
 	}
+
+	// Prevent removing the root directory of the PrefixFS
+	// This would make the filesystem inconsistent
+	if path == s.prefix {
+		return &fs.PathError{Op: "remove_all", Path: name, Err: syscall.EPERM}
+	}
+
 	err = s.base.RemoveAll(path)
 	if err != nil {
 		return err

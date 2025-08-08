@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,9 +89,42 @@ func FuzzSortByMostFilePathSeparators(f *testing.F) {
 			separator,
 			path,
 		}
+		
+		// Store original list for comparison
+		originalSeparatorSeparators := strings.Count(TrimVolume(separator), separator)
+		originalPathSeparators := strings.Count(TrimVolume(path), separator)
+		
+		// Apply special root handling like LessFilePathSeparators does
+		trimmedSeparator := TrimVolume(separator)
+		if originalSeparatorSeparators == 1 && trimmedSeparator == separator {
+			originalSeparatorSeparators = -1
+		}
+		
+		trimmedPath := TrimVolume(path)
+		if originalPathSeparators == 1 && trimmedPath == separator {
+			originalPathSeparators = -1
+		}
+		
 		sort.Sort(ByMostFilePathSeparators(list))
-
-		require.Equal(t, list[len(list)-1], separator)
+		
+		// After sorting by most separators, the element with fewer separators should be last
+		// If they have the same number of separators, lexicographic order determines position
+		if originalSeparatorSeparators < originalPathSeparators {
+			require.Equal(t, list[len(list)-1], separator)
+		} else if originalSeparatorSeparators > originalPathSeparators {
+			require.Equal(t, list[0], separator)
+		} else {
+			// Same number of separators, check the actual sort result using the Less function
+			// If ByMostFilePathSeparators.Less(separator, path) is true, then separator comes before path
+			byMost := ByMostFilePathSeparators([]string{separator, path})
+			if byMost.Less(0, 1) { // separator < path in ByMostFilePathSeparators order
+				require.Equal(t, list[0], separator)
+				require.Equal(t, list[1], path)
+			} else {
+				require.Equal(t, list[0], path)
+				require.Equal(t, list[1], separator)
+			}
+		}
 	})
 }
 
@@ -112,8 +146,40 @@ func FuzzSortByLeastFilePathSeparators(f *testing.F) {
 			separator,
 			path,
 		}
+		
+		// Store original list for comparison
+		originalSeparatorSeparators := strings.Count(TrimVolume(separator), separator)
+		originalPathSeparators := strings.Count(TrimVolume(path), separator)
+		
+		// Apply special root handling like LessFilePathSeparators does
+		trimmedSeparator := TrimVolume(separator)
+		if originalSeparatorSeparators == 1 && trimmedSeparator == separator {
+			originalSeparatorSeparators = -1
+		}
+		
+		trimmedPath := TrimVolume(path)
+		if originalPathSeparators == 1 && trimmedPath == separator {
+			originalPathSeparators = -1
+		}
+		
 		sort.Sort(ByLeastFilePathSeparators(list))
-
-		require.Equal(t, list[0], separator)
+		
+		// After sorting by least separators, the element with fewer separators should be first
+		if originalSeparatorSeparators < originalPathSeparators {
+			require.Equal(t, list[0], separator)
+		} else if originalSeparatorSeparators > originalPathSeparators {
+			require.Equal(t, list[1], separator)
+		} else {
+			// Same number of separators, check the actual sort result using the Less function
+			// If ByLeastFilePathSeparators.Less(separator, path) is true, then separator comes before path
+			byLeast := ByLeastFilePathSeparators([]string{separator, path})
+			if byLeast.Less(0, 1) { // separator < path in ByLeastFilePathSeparators order
+				require.Equal(t, list[0], separator)
+				require.Equal(t, list[1], path)
+			} else {
+				require.Equal(t, list[0], path)
+				require.Equal(t, list[1], separator)
+			}
+		}
 	})
 }

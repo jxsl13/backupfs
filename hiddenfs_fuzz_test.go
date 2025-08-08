@@ -38,9 +38,11 @@ func FuzzHiddenFSRemoveAll(f *testing.F) {
 		_, hiddenDir, _, base, fs := SetupTempDirHiddenFSTest(t)
 		// should not be able to create a file in that directory
 
+		t.Logf("Testing with filePath: %q", filePath)
 		fs.RemoveAll(filePath)
 
 		// anything in the hidden directory must stay as is
+		t.Logf("Calling countFiles with hiddenDir: %q", hiddenDir)
 		countFiles(t, base, hiddenDir, 2)
 	})
 }
