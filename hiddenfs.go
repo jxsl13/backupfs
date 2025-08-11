@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -165,11 +164,7 @@ func (s *HiddenFS) Remove(name string) error {
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
 func (s *HiddenFS) RemoveAll(name string) error {
-	// Prevent removing the root directory (".") which would break the filesystem
-	if filepath.Clean(name) == "." {
-		return &os.PathError{Op: "remove_all", Path: name, Err: syscall.EPERM}
-	}
-	
+
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -374,7 +369,7 @@ func (s *HiddenFS) Symlink(oldname, newname string) error {
 
 	// not allowed to symlink into hidden directory
 
-	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(filepath.FromSlash(oldname)) {
+	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(oldname) {
 		hidden, err = s.isHidden(oldname)
 	} else {
 		startingDir := filepath.Dir(newname)
@@ -460,16 +455,13 @@ func isParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 const relParent = ".." + string(os.PathSeparator)
 
 func dirContains(parent, subdir string) (bool, error) {
-	// Normalize paths first
-	parent = filepath.Clean(filepath.FromSlash(parent))
-	subdir = filepath.Clean(filepath.FromSlash(subdir))
-	
+
 	// Try filepath.Rel with the normalized paths first
 	relPath, err := filepath.Rel(parent, subdir)
 	if err != nil {
 		// If that fails, try making both paths absolute (for Windows compatibility)
 		var absParent, absSubdir string
-		
+
 		if filepath.IsAbs(parent) {
 			absParent = parent
 		} else {
@@ -505,13 +497,13 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 	// Normalize paths first
 	name = filepath.Clean(filepath.FromSlash(name))
 	hiddenDir = filepath.Clean(filepath.FromSlash(hiddenDir))
-	
+
 	// Try filepath.Rel with the normalized paths first
 	relPath, err = filepath.Rel(hiddenDir, name)
 	if err != nil {
 		// If that fails, try making both paths absolute (for Windows compatibility)
 		var absName, absHiddenDir string
-		
+
 		if filepath.IsAbs(name) {
 			absName = name
 		} else {
@@ -520,7 +512,7 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 				return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
 			}
 		}
-		
+
 		if filepath.IsAbs(hiddenDir) {
 			absHiddenDir = hiddenDir
 		} else {
@@ -529,7 +521,7 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 				return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
 			}
 		}
-		
+
 		relPath, err = filepath.Rel(absHiddenDir, absName)
 		if err != nil {
 			return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
