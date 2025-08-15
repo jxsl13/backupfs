@@ -28,8 +28,23 @@ func NewPrefixFS(fsys FS, prefixPath string) (_ *PrefixFS, err error) {
 		}
 	}()
 
+	prefixPath = filepath.FromSlash(prefixPath)
+
+	// unwrap other PrefixFS - required in order to properly support Windows
+	// nested drive letters
+	if pfs, ok := fsys.(*PrefixFS); ok {
+		fsys = pfs.base
+		prefixPath = normalizeVolumePath(prefixPath)
+		prefixPath = filepath.Join(pfs.prefix, prefixPath)
+	}
+
+	absPrefixPath, err := filepath.Abs(prefixPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create absolute path from provided path %s: %w", prefixPath, err)
+	}
+
 	return &PrefixFS{
-		prefix: filepath.Clean(prefixPath),
+		prefix: absPrefixPath,
 		base:   fsys,
 	}, nil
 }
@@ -41,48 +56,57 @@ type PrefixFS struct {
 	base   FS
 }
 
-func (s *PrefixFS) prefixPath(name string) (string, error) {
-	volume := filepath.VolumeName(name)
-
+// c:\\test -> \\c\\test
+func normalizeVolumePath(p string) string {
+	volume := filepath.VolumeName(p)
 	if volume != "" {
 		// interesting for windows, as this backup mechanism does not exactly work
 		// with prefixed directories otherwise. A colon is not allowed inisde of the file path.
 		// prefix path with volume letter but without the :
-		volumeName := strings.TrimRight(volume, ":\\/")
-		nameWithoutVolume := strings.TrimLeft(name, volume)
-		name = filepath.Join(volumeName, nameWithoutVolume)
+		volumeName := strings.TrimRight(volume, ":")
+		nameWithoutVolume := p[len(volume):]
+		return filepath.Join(separator+volumeName, nameWithoutVolume)
 	}
+	return p
+}
 
-	p := filepath.Join(s.prefix, filepath.Clean(name))
-	if !strings.HasPrefix(p, s.prefix) {
-		return "", syscall.EPERM
+func (s *PrefixFS) prefixPath(name string) (absolute, prefixed string, err error) {
+
+	absolute, err = filepath.Abs(filepath.FromSlash(name))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to make path absolute %s: %w", name, err)
 	}
-	return p, nil
+	prefixed = normalizeVolumePath(absolute)
+	prefixed = filepath.Join(s.prefix, prefixed)
+	if !strings.HasPrefix(prefixed, s.prefix) {
+		return "", "", syscall.EPERM
+	}
+	return absolute, prefixed, nil
 }
 
 // Create creates a file in the filesystem, returning the file and an
 // error, if any happens.
 func (s *PrefixFS) Create(name string) (File, error) {
-	path, err := s.prefixPath(name)
+	abs, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return nil, &fs.PathError{Op: "create", Path: name, Err: err}
 	}
-	f, err := s.base.Create(path)
+	f, err := s.base.Create(prefixed)
 	if err != nil {
 		return nil, err
 	}
 
-	return newPrefixFile(f, path, s.prefix), nil
+	return newPrefixFile(f, name, abs), nil
 }
 
 // Mkdir creates a directory in the filesystem, return an error if any
 // happens.
 func (s *PrefixFS) Mkdir(name string, perm fs.FileMode) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return &fs.PathError{Op: "mkdir", Path: name, Err: err}
 	}
-	err = s.base.Mkdir(path, perm)
+	err = s.base.Mkdir(prefixed, perm)
 	if err != nil {
 		return err
 	}
@@ -92,12 +116,12 @@ func (s *PrefixFS) Mkdir(name string, perm fs.FileMode) error {
 // MkdirAll creates a directory path and all parents that does not exist
 // yet.
 func (s *PrefixFS) MkdirAll(name string, perm fs.FileMode) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return &fs.PathError{Op: "mkdir_all", Path: name, Err: err}
 	}
 
-	err = s.base.MkdirAll(path, perm)
+	err = s.base.MkdirAll(prefixed, perm)
 	if err != nil {
 		return err
 	}
@@ -107,49 +131,49 @@ func (s *PrefixFS) MkdirAll(name string, perm fs.FileMode) error {
 // Open opens a file, returning it or an error, if any happens.
 // This returns a ready only file
 func (s *PrefixFS) Open(name string) (File, error) {
-	path, err := s.prefixPath(name)
+	abs, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 	}
 
-	f, err := s.base.Open(path)
+	f, err := s.base.Open(prefixed)
 	if err != nil {
 		return nil, err
 	}
 
-	return newPrefixFile(f, path, s.prefix), nil
+	return newPrefixFile(f, name, abs), nil
 }
 
 // OpenFile opens a file using the given flags and the given mode.
 func (s *PrefixFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
-	path, err := s.prefixPath(name)
+	abs, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return nil, &fs.PathError{Op: "open_file", Path: name, Err: err}
 	}
 
-	f, err := s.base.OpenFile(path, flag, perm)
+	f, err := s.base.OpenFile(prefixed, flag, perm)
 	if err != nil {
 		return nil, err
 	}
 
-	return newPrefixFile(f, path, s.prefix), nil
+	return newPrefixFile(f, name, abs), nil
 }
 
 // Remove removes a file identified by name, returning an error, if any
 // happens.
 func (s *PrefixFS) Remove(name string) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return &fs.PathError{Op: "remove", Path: name, Err: err}
 	}
 
 	// Prevent removing the root directory of the PrefixFS
 	// This would make the filesystem inconsistent
-	if path == s.prefix {
+	if prefixed == s.prefix {
 		return &fs.PathError{Op: "remove", Path: name, Err: syscall.EPERM}
 	}
 
-	err = s.base.Remove(path)
+	err = s.base.Remove(prefixed)
 	if err != nil {
 		return err
 	}
@@ -159,18 +183,18 @@ func (s *PrefixFS) Remove(name string) error {
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
 func (s *PrefixFS) RemoveAll(name string) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return &fs.PathError{Op: "remove_all", Path: name, Err: err}
 	}
 
 	// Prevent removing the root directory of the PrefixFS
 	// This would make the filesystem inconsistent
-	if path == s.prefix {
+	if prefixed == s.prefix {
 		return &fs.PathError{Op: "remove_all", Path: name, Err: syscall.EPERM}
 	}
 
-	err = s.base.RemoveAll(path)
+	err = s.base.RemoveAll(prefixed)
 	if err != nil {
 		return err
 	}
@@ -179,12 +203,12 @@ func (s *PrefixFS) RemoveAll(name string) error {
 
 // Rename renames a file.
 func (s *PrefixFS) Rename(oldname, newname string) error {
-	oldpath, err := s.prefixPath(oldname)
+	_, oldpath, err := s.prefixPath(oldname)
 	if err != nil {
 		return &fs.PathError{Op: "rename", Path: oldname, Err: err}
 	}
 
-	newpath, err := s.prefixPath(newname)
+	_, newpath, err := s.prefixPath(newname)
 	if err != nil {
 		return &fs.PathError{Op: "rename", Path: newname, Err: err}
 	}
@@ -198,17 +222,17 @@ func (s *PrefixFS) Rename(oldname, newname string) error {
 // Stat returns a FileInfo describing the named file, or an error, if any
 // happens.
 func (s *PrefixFS) Stat(name string) (fs.FileInfo, error) {
-	path, err := s.prefixPath(name)
+	abs, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return nil, &fs.PathError{Op: "stat", Path: name, Err: err}
 	}
 
-	fi, err := s.base.Stat(path)
+	fi, err := s.base.Stat(prefixed)
 	if err != nil {
 		return nil, err
 	}
 
-	return newPrefixFileInfo(fi, path, s.prefix), nil
+	return newPrefixFileInfo(fi, abs), nil
 }
 
 // The name of this FileSystem
@@ -218,12 +242,12 @@ func (s *PrefixFS) Name() string {
 
 // Chmod changes the mode of the named file to mode.
 func (s *PrefixFS) Chmod(name string, mode fs.FileMode) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return err
 	}
 
-	err = s.base.Chmod(path, mode)
+	err = s.base.Chmod(prefixed, mode)
 	if err != nil {
 		return err
 	}
@@ -232,12 +256,12 @@ func (s *PrefixFS) Chmod(name string, mode fs.FileMode) error {
 
 // Chown changes the uid and gid of the named file.
 func (s *PrefixFS) Chown(name string, uid, gid int) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return &fs.PathError{Op: "chown", Path: name, Err: err}
 	}
 
-	err = s.base.Chown(path, uid, gid)
+	err = s.base.Chown(prefixed, uid, gid)
 	if err != nil {
 		return err
 	}
@@ -246,11 +270,11 @@ func (s *PrefixFS) Chown(name string, uid, gid int) error {
 
 // Chtimes changes the access and modification times of the named file
 func (s *PrefixFS) Chtimes(name string, atime, mtime time.Time) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return &fs.PathError{Op: "chtimes", Path: name, Err: err}
 	}
-	err = s.base.Chtimes(path, atime, mtime)
+	err = s.base.Chtimes(prefixed, atime, mtime)
 	if err != nil {
 		return err
 	}
@@ -261,76 +285,123 @@ func (s *PrefixFS) Chtimes(name string, atime, mtime time.Time) error {
 // Else it will call Stat.
 // In addtion to the FileInfo, it will return a boolean telling whether Lstat was called or not.
 func (s *PrefixFS) Lstat(name string) (fs.FileInfo, error) {
-	path, err := s.prefixPath(name)
+	absolute, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return nil, &fs.PathError{Op: "lstat", Path: name, Err: err}
 	}
 
-	fi, err := s.base.Lstat(path)
+	fi, err := s.base.Lstat(prefixed)
 	if err != nil {
 		return nil, err
 	}
-	return newPrefixFileInfo(fi, path, s.prefix), nil
+	return newPrefixFileInfo(fi, absolute), nil
 }
 
 // Symlink changes the access and modification times of the named file
-func (s *PrefixFS) Symlink(oldname, newname string) error {
+// On Windows root relative symlinks ( \\User\\abs\\...) will be converted to relative (..\\abc\\... ) symlinks.
+
+func (s *PrefixFS) Symlink(oldname, newname string) (err error) {
+	defer func() {
+		if err != nil {
+			err = &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+		}
+	}()
 	// links may be relative paths
+	newAbs, newPathPrefixed, err := s.prefixPath(newname)
+	if err != nil {
+		return err
+	}
 
-	var (
-		err     error
-		oldPath string
-	)
 	if isAbs(oldname) {
-		// absolute path symlink
-		oldPath, err = s.prefixPath(oldname)
-	} else {
-		// relative path symlink
-		_, err = s.prefixPath(filepath.Join(filepath.Dir(newname), oldname))
-		oldPath = oldname
+		_, oldPathPrefixed, err := s.prefixPath(oldname)
+		if err != nil {
+			return err
+		}
+		err = s.base.Symlink(oldPathPrefixed, newPathPrefixed)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
+	// symlink is relative
+	newAbsDirPath := filepath.Dir(newAbs)
+	oldAbs := filepath.Join(newAbsDirPath, oldname)
+
+	_, _, err = s.prefixPath(oldAbs)
 	if err != nil {
-		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+		return err
 	}
 
-	newPath, err := s.prefixPath(newname)
+	rel, err := filepath.Rel(newAbsDirPath, oldAbs)
 	if err != nil {
-		return &os.LinkError{Op: "symlink", Old: oldname, New: newname, Err: err}
+		return err
 	}
 
-	err = s.base.Symlink(oldPath, newPath)
+	err = s.base.Symlink(rel, newPathPrefixed)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *PrefixFS) Readlink(name string) (string, error) {
-	path, err := s.prefixPath(name)
-	if err != nil {
-		return "", &fs.PathError{Op: "readlink", Path: name, Err: err}
-	}
-
-	linkedPath, err := s.base.Readlink(path)
+// Readlink only returns absolute or relative paths, never root relative paths.
+func (s *PrefixFS) Readlink(name string) (_ string, err error) {
+	defer func() {
+		if err != nil {
+			err = &fs.PathError{Op: "readlink", Path: name, Err: err}
+		}
+	}()
+	_, prefixedNewPath, err := s.prefixPath(name)
 	if err != nil {
 		return "", err
 	}
-	cleanedPath := filepath.Clean(linkedPath)
 
-	prefixlessPath := strings.TrimPrefix(cleanedPath, s.prefix)
-	return prefixlessPath, nil
+	oldname, err := s.base.Readlink(prefixedNewPath)
+	if err != nil {
+		return "", err
+	}
+	cleanedOldname := filepath.Clean(filepath.FromSlash(oldname))
+
+	if isAbs(cleanedOldname) {
+		return reconstructVolume(cleanedOldname, s.prefix), nil
+	}
+
+	return cleanedOldname, nil
 }
 
 func (s *PrefixFS) Lchown(name string, uid, gid int) error {
-	path, err := s.prefixPath(name)
+	_, prefixed, err := s.prefixPath(name)
 	if err != nil {
 		return &fs.PathError{Op: "lchown", Path: name, Err: err}
 	}
 
-	err = s.base.Lchown(path, uid, gid)
+	err = s.base.Lchown(prefixed, uid, gid)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func reconstructVolume(absOldPath, prefix string) string {
+	// reconstruct drive letter if volumes are available
+	if filepath.VolumeName(absOldPath) == "" {
+		return strings.TrimPrefix(absOldPath, prefix)
+	}
+
+	// windows handling
+	// we get a path like this /c/Users/name/...
+	volumePath := strings.TrimLeft(strings.TrimPrefix(absOldPath, prefix), separator)
+	// now we need to reconstruct the drive letter
+	parts := strings.SplitN(volumePath, separator, 2)
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		// just a drive letter (root path)
+		return filepath.Clean(parts[0] + ":" + separator)
+	default:
+		// reconstruct drive letter with trailing path
+		return filepath.Clean(parts[0] + ":" + separator + parts[1])
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jxsl13/backupfs/internal/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,10 +22,6 @@ func TestRelCantMakeRelative(t *testing.T) {
 
 	hiddenDir := filepath.Join(rootPath, "/backup/0194f97d-930b-75b5-b09a-db550cd729c1")
 	hiddenFile := filepath.Join(rootPath, "/backup/0194f97d-930b-75b5-b09a-db550cd729c1.json")
-
-	// we MUST NOT pass a volume prefix to the HiddenFS
-	hiddenDir = TrimVolume(hiddenDir)
-	hiddenFile = TrimVolume(hiddenFile)
 
 	hfs, err := NewHiddenFS(
 		root,
@@ -229,37 +226,34 @@ func TestHiddenFSSymlink(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 4)
 }
 
-func NewTestTempDirHiddenFS(hiddenPaths ...string) (base FS, hfs *HiddenFS) {
-	return newTestTempDirHiddenFS(0, hiddenPaths...)
+func NewTestTempDirHiddenFS(t *testing.T, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
+	return newTestTempDirHiddenFS(t, 0, hiddenPaths...)
 }
 
-func newTestTempDirHiddenFS(caller int, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
+func newTestTempDirHiddenFS(t *testing.T, caller int, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
 	rootPath := CallerPathTmp(caller)
 	root := NewTempDirPrefixFS(rootPath)
+	require := require.New(t)
 
 	hidden := "/hidden"
 	err := root.MkdirAll(hidden, 0700)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
+
 	base, err = NewPrefixFS(root, hidden)
-	if err != nil {
-		panic(err) // not supposed to happen, because /hidden has no volume prefix
-	}
+	require.NoError(err)
+
 	hfs, err = NewHiddenFS(base, hiddenPaths...)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
+
 	return base, hfs
 }
 
 func SetupTempDirHiddenFSTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base FS, fs *HiddenFS) {
-	hiddenDirParent = filepath.FromSlash("/var/opt")
-	hiddenDir = filepath.FromSlash("/var/opt/backups")
+	hiddenDirParent = testutils.AbsFilePath(t, "/var/opt")
+	hiddenDir = testutils.AbsFilePath(t, "/var/opt/backups")
 	hiddenFile = "hidden_file.txt"
 
-	// prepare base filesystem before using the hidden fs layer
-	base, fs = newTestTempDirHiddenFS(1, hiddenDir)
+	base, fs = newTestTempDirHiddenFS(t, 1, hiddenDir)
 
 	mkdir(t, base, hiddenDirParent, 0775)
 	mkdirAll(t, base, hiddenDir, 0775)

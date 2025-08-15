@@ -79,6 +79,15 @@ func FuzzSortByMostFilePathSeparators(f *testing.F) {
 		separator,
 	}
 
+	for i, v := range list {
+		v, err := filepath.Abs(v)
+		if err != nil {
+			f.Error(err)
+			return
+		}
+		list[i] = v
+	}
+
 	for _, path := range list {
 		f.Add(path)
 	}
@@ -89,24 +98,24 @@ func FuzzSortByMostFilePathSeparators(f *testing.F) {
 			separator,
 			path,
 		}
-		
+
 		// Store original list for comparison
 		originalSeparatorSeparators := strings.Count(TrimVolume(separator), separator)
 		originalPathSeparators := strings.Count(TrimVolume(path), separator)
-		
+
 		// Apply special root handling like LessFilePathSeparators does
 		trimmedSeparator := TrimVolume(separator)
 		if originalSeparatorSeparators == 1 && trimmedSeparator == separator {
 			originalSeparatorSeparators = -1
 		}
-		
+
 		trimmedPath := TrimVolume(path)
 		if originalPathSeparators == 1 && trimmedPath == separator {
 			originalPathSeparators = -1
 		}
-		
+
 		sort.Sort(ByMostFilePathSeparators(list))
-		
+
 		// After sorting by most separators, the element with fewer separators should be last
 		// If they have the same number of separators, lexicographic order determines position
 		if originalSeparatorSeparators < originalPathSeparators {
@@ -136,6 +145,15 @@ func FuzzSortByLeastFilePathSeparators(f *testing.F) {
 		separator,
 	}
 
+	for i, v := range list {
+		v, err := filepath.Abs(v)
+		if err != nil {
+			f.Error(err)
+			return
+		}
+		list[i] = v
+	}
+
 	for _, path := range list {
 		f.Add(path)
 	}
@@ -146,24 +164,24 @@ func FuzzSortByLeastFilePathSeparators(f *testing.F) {
 			separator,
 			path,
 		}
-		
+
 		// Store original list for comparison
 		originalSeparatorSeparators := strings.Count(TrimVolume(separator), separator)
 		originalPathSeparators := strings.Count(TrimVolume(path), separator)
-		
+
 		// Apply special root handling like LessFilePathSeparators does
 		trimmedSeparator := TrimVolume(separator)
 		if originalSeparatorSeparators == 1 && trimmedSeparator == separator {
 			originalSeparatorSeparators = -1
 		}
-		
+
 		trimmedPath := TrimVolume(path)
 		if originalPathSeparators == 1 && trimmedPath == separator {
 			originalPathSeparators = -1
 		}
-		
+
 		sort.Sort(ByLeastFilePathSeparators(list))
-		
+
 		// After sorting by least separators, the element with fewer separators should be first
 		if originalSeparatorSeparators < originalPathSeparators {
 			require.Equal(t, list[0], separator)

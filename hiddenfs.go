@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,10 +33,14 @@ func NewHiddenFS(base FS, hiddenPaths ...string) (_ *HiddenFS, err error) {
 			err = fmt.Errorf("failed to create HiddenFS: %w", err)
 		}
 	}()
-	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 
+	// we want absolute paths in here
+	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 	for _, p := range hiddenPaths {
-		normalizedPath := filepath.Clean(filepath.FromSlash(p))
+		normalizedPath, err := filepath.Abs(filepath.FromSlash(p))
+		if err != nil {
+			return nil, fmt.Errorf("failed to normalize hidden path %q: %w", p, err)
+		}
 		normalizedHiddenPaths = append(normalizedHiddenPaths, normalizedPath)
 	}
 
@@ -369,7 +372,7 @@ func (s *HiddenFS) Symlink(oldname, newname string) error {
 
 	// not allowed to symlink into hidden directory
 
-	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(oldname) {
+	if isAbs(oldname) {
 		hidden, err = s.isHidden(oldname)
 	} else {
 		startingDir := filepath.Dir(newname)
@@ -494,9 +497,6 @@ func dirContains(parent, subdir string) (bool, error) {
 }
 
 func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
-	// Normalize paths first
-	name = filepath.Clean(filepath.FromSlash(name))
-	hiddenDir = filepath.Clean(filepath.FromSlash(hiddenDir))
 
 	// Try filepath.Rel with the normalized paths first
 	relPath, err = filepath.Rel(hiddenDir, name)
@@ -550,10 +550,13 @@ func isHidden(name string, hiddenPaths []string) (bool, error) {
 	}
 
 	// file normalization allows to use a single filepath separator
-	name = filepath.Clean(filepath.FromSlash(name))
+	absName, err := filepath.Abs(filepath.FromSlash(name))
+	if err != nil {
+		return false, fmt.Errorf("failed to make path absolute %s: %w", name, err)
+	}
 
 	for _, hiddenDir := range hiddenPaths {
-		_, hidden, err := isInHiddenPath(name, hiddenDir)
+		_, hidden, err := isInHiddenPath(absName, hiddenDir)
 		if err != nil {
 			return false, err
 		}

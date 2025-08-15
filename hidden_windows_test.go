@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jxsl13/backupfs/internal/testutils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,20 +26,9 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 	}
 
 	// Define relative Windows paths starting with /
-	relHiddenDirParent := "/backup"
-	relHiddenDir := "/backup/hidden"
+	absHiddenDirParent := testutils.AbsFilePath(t, "/backup")
+	absHiddenDir := testutils.AbsFilePath(t, "/backup/hidden")
 	hiddenFile := "secret.json"
-
-	// Convert to absolute Windows paths using filepath.Abs and filepath.FromSlash
-	absHiddenDirParent, err := filepath.Abs(filepath.FromSlash(relHiddenDirParent))
-	if !assert.NoError(t, err) {
-		return
-	}
-
-	absHiddenDir, err := filepath.Abs(filepath.FromSlash(relHiddenDir))
-	if !assert.NoError(t, err) {
-		return
-	}
 
 	// Create the hidden filesystem - use full absolute Windows path with volume prefix
 	// This tests HiddenFS ability to handle paths like C:\backup\hidden
@@ -144,14 +134,8 @@ func TestHiddenFS_WindowsSystemPaths(t *testing.T) {
 	}
 
 	// Use Windows system-like relative paths
-	relSystemDir := "/Windows/System32/config"
+	absSystemDir := testutils.AbsFilePath(t, "/Windows/System32/config")
 	systemFile := "system.dat"
-
-	// Convert to absolute Windows path
-	absSystemDir, err := filepath.Abs(filepath.FromSlash(relSystemDir))
-	if !assert.NoError(t, err) {
-		return
-	}
 
 	// Create hidden filesystem using full absolute Windows path with volume prefix
 	// This tests the scenario like C:\Windows\System32\config
@@ -200,20 +184,8 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 		return
 	}
 
-	// Define relative Windows paths
-	relHiddenDir := "/system/hidden"
-	relVisibleDir := "/system/visible"
-
-	// Convert to absolute Windows paths
-	absHiddenDir, err := filepath.Abs(filepath.FromSlash(relHiddenDir))
-	if !assert.NoError(t, err) {
-		return
-	}
-
-	absVisibleDir, err := filepath.Abs(filepath.FromSlash(relVisibleDir))
-	if !assert.NoError(t, err) {
-		return
-	}
+	absHiddenDir := testutils.AbsFilePath(t, "/system/hidden")
+	absVisibleDir := testutils.AbsFilePath(t, "/system/visible")
 
 	// Create HiddenFS using full absolute Windows path with volume prefix
 	// This tests symlink operations with paths like C:\system\hidden
@@ -268,7 +240,7 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 	validSymlinkPath := symlinkPath + "-valid"
 	// Remove any existing symlink from previous test runs
 	_ = hfs.Remove(validSymlinkPath) // Ignore error if file doesn't exist
-	
+
 	err = hfs.Symlink("public.txt", validSymlinkPath)
 	if !assert.NoError(t, err) {
 		return
@@ -303,20 +275,9 @@ func TestHiddenFS_WindowsVolumePathIssue(t *testing.T) {
 	}
 
 	// Simulate the problematic path scenario
-	relDBADir := "/DBA"
-	relBackupDir := "/DBA/agent/runtime/backups"
+	absDBADir := testutils.AbsFilePath(t, "/DBA")
+	absBackupDir := testutils.AbsFilePath(t, "/DBA/agent/runtime/backups")
 	backupFile := "f7a406eb-40d6-482d-9f29-2e35d85e4b5b.json"
-
-	// Convert to absolute Windows paths - this will create paths like C:\DBA
-	absDBADir, err := filepath.Abs(filepath.FromSlash(relDBADir))
-	if !assert.NoError(t, err) {
-		return
-	}
-
-	absBackupDir, err := filepath.Abs(filepath.FromSlash(relBackupDir))
-	if !assert.NoError(t, err) {
-		return
-	}
 
 	// Create HiddenFS with the backup directory as hidden - using full absolute path with volume prefix
 	// This should handle C:\DBA\agent\runtime\backups without the "can't make C:. relative" error

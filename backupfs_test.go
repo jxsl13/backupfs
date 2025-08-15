@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -20,19 +20,23 @@ import (
 func TestBackupFS_Create(t *testing.T) {
 	t.Parallel()
 
-	root, base, backup, backupFS := NewTestBackupFS()
+	root, base, backup, backupFS := NewTestBackupFS(t)
 	defer func() {
 		// Clean up by removing the contents, not the root directory itself
 		require.NoError(t, root.RemoveAll("/base"))
 	}()
 
 	var (
+		err                         error
 		filePath                    = "/test/01/test_01.txt"
 		fileContent                 = "test_content"
 		fileContentOverwritten      = fileContent + "_overwritten"
 		fileContentOverwrittenAgain = fileContentOverwritten + "_again"
 	)
-	createFile(t, base, filePath, fileContent)
+
+	absFilePath := testutils.AbsFilePath(t, filePath)
+
+	createFile(t, base, absFilePath, fileContent)
 
 	baseFSState := createFSState(t, base, "/")
 	backupFSState := createFSState(t, backup, "/")
@@ -57,7 +61,7 @@ func TestBackupFS_Create(t *testing.T) {
 	mustNotExist(t, backup, newFilePath)
 
 	// ROLLBACK
-	err := backupFS.Rollback()
+	err = backupFS.Rollback()
 	require.NoError(t, err)
 	// ROLLBACK
 
@@ -70,7 +74,7 @@ func TestBackupFS_Name(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
-	_, _, _, backupFS := NewTestBackupFS()
+	_, _, _, backupFS := NewTestBackupFS(t)
 
 	require.Equal(backupFS.Name(), "BackupFS")
 }
@@ -78,7 +82,7 @@ func TestBackupFS_Name(t *testing.T) {
 func TestBackupFS_OpenFile(t *testing.T) {
 	t.Parallel()
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		filePath                    = "/test/01/test_01.txt"
@@ -123,7 +127,7 @@ func TestBackupFS_OpenFile(t *testing.T) {
 func TestBackupFS_Remove(t *testing.T) {
 	t.Parallel()
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		filePath    = "/test/01/test_01.txt"
@@ -155,15 +159,15 @@ func TestBackupFS_Remove(t *testing.T) {
 func TestBackupFS_RemoveAll(t *testing.T) {
 	t.Parallel()
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		// different number of file path separators
 		// while still having the same number of characters in the filepath
-		fileDirRoot = "/test"
-		fileDir     = "/test/001"
-		fileDir2    = "/test/0/2"
-		symlinkDir  = "/test/sym"
+		fileDirRoot = testutils.AbsFilePath(t, "/test")
+		fileDir     = testutils.AbsFilePath(t, "/test/001")
+		fileDir2    = testutils.AbsFilePath(t, "/test/0/2")
+		symlinkDir  = testutils.AbsFilePath(t, "/test/sym")
 		fileContent = "test_content"
 	)
 
@@ -230,7 +234,7 @@ func TestBackupFS_Rename(t *testing.T) {
 	var (
 		require = require.New(t)
 	)
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		oldDirName   = "/test/rename"
@@ -284,7 +288,7 @@ func TestBackupFS_Rollback(t *testing.T) {
 		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		// different number of file path separators
@@ -381,7 +385,7 @@ func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
 		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		// different number of file path separators
@@ -478,7 +482,7 @@ func TestBackupFS_JSON(t *testing.T) {
 		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		// different number of file path separators
@@ -554,7 +558,7 @@ func TestBackupFS_JSON(t *testing.T) {
 		}
 
 		require.Equal(info.IsDir(), newInfo.IsDir())
-		require.Equal(info.Name(), filepath.FromSlash(newInfo.Name()))
+		require.Equal(info.Name(), newInfo.Name())
 		require.Equal(info.Size(), newInfo.Size())
 		require.Equal(info.ModTime().UnixNano(), newInfo.ModTime().UnixNano())
 		require.Equal(info.Mode(), newInfo.Mode())
@@ -607,19 +611,20 @@ func TestBackupFS_JSON(t *testing.T) {
 func TestBackupFS_Symlink(t *testing.T) {
 	t.Parallel()
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
+		err     error
 		require = require.New(t)
 		// different number of file path separators
 		// while still having the same number of characters in the filepath
-		fileDirRoot = "/test"
-		fileDir     = "/test/001"
-		fileDir2    = "/test/0/2"
+		fileDirRoot = testutils.AbsFilePath(t, "/test")
+		fileDir     = testutils.AbsFilePath(t, "/test/001")
+		fileDir2    = testutils.AbsFilePath(t, "/test/0/2")
 		fileContent = "test_content"
 	)
 
-	// base filesystem structure and files befor emodifying
+	// base filesystem structure and files before modifying
 
 	mkdirAll(t, base, fileDir, 0755)
 	mkdirAll(t, base, fileDir2, 0755)
@@ -658,7 +663,7 @@ func TestBackupFS_Symlink(t *testing.T) {
 
 	createSymlink(t, backupFS, filepath.Join(fileDir2, "/does_not_exist"), "/to_be_removed_symlink")
 
-	err := backupFS.Rollback()
+	err = backupFS.Rollback()
 	require.NoError(err)
 
 	// assert both base symlinks point to their respective previous paths
@@ -687,7 +692,7 @@ func TestBackupFS_Mkdir(t *testing.T) {
 		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		// different number of file path separators
@@ -734,7 +739,7 @@ func TestBackupFS_MkdirAll(t *testing.T) {
 		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		// different number of file path separators
@@ -773,7 +778,7 @@ func TestBackupFS_Chmod(t *testing.T) {
 		require = require.New(t)
 	)
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		// different number of file path separators
@@ -831,65 +836,60 @@ func NewTempDirPrefixFS(rootDir string) *PrefixFS {
 
 	tempDir, err := TempDir(osFS, rootDir, fmt.Sprintf("%s-", time.Now().Format("2006-01-02_15-04-05.000")))
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 
-	var volumeFS FS = osFS
-
-	volume := filepath.VolumeName(tempDir)
-	if volume != "" {
-		// on linux we do not need this branch
-		volumeFS = NewVolumeFS(volume, osFS)
-		tempDir = TrimVolume(tempDir)
-	}
-
-	pfs, err := NewPrefixFS(volumeFS, tempDir)
+	pfs, err := NewPrefixFS(osFS, tempDir)
 	if err != nil {
 		panic(err)
 	}
 	return pfs
 }
 
-func NewTestBackupFS() (root, base, backup FS, backupFS *BackupFS) {
+func NewTestBackupFS(t *testing.T) (root, base, backup FS, backupFS *BackupFS) {
 	rootPath := CallerPathTmp()
 	root = NewTempDirPrefixFS(rootPath)
+	require := require.New(t)
 
-	err := root.MkdirAll("/base", 0700)
-	if err != nil {
-		panic(err)
-	}
+	pwd, err := os.Getwd()
+	require.NoError(err)
 
-	err = root.MkdirAll("/base/backup", 0700)
-	if err != nil {
-		panic(err)
-	}
+	volume := filepath.VolumeName(pwd)
+	volumeName := strings.TrimRight(volume, ":")
 
-	backupFile := "/base/backup.file"
-	f, err := root.Create(backupFile)
-	if err != nil {
-		panic(err)
-	}
+	basePath := filepath.FromSlash(volume + "/base")
+
+	err = root.MkdirAll(basePath, 0700)
+	require.NoError(err)
+
+	absBackupDirPath := filepath.Join(basePath, volumeName, "/backup")
+	err = root.MkdirAll(absBackupDirPath, 0700)
+	require.NoError(err)
+
+	absBackupFilePath := filepath.Join(basePath, volumeName, "backup.file")
+	f, err := root.Create(absBackupFilePath)
+	require.NoError(err)
 	defer f.Close()
 
 	_, err = io.WriteString(f, "backup file")
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
 
-	base, err = NewPrefixFS(root, "/base")
-	if err != nil {
-		panic(err) // should not happen, becaus epath is not prefixed with a volume
-	}
-	backup, err = NewPrefixFS(base, "/backup")
-	if err != nil {
-		panic(err) // should not happen, becaus epath is not prefixed with a volume
-	}
+	base, err = NewPrefixFS(root, basePath)
+	require.NoError(err)
+
+	err = base.MkdirAll(volume+"/", 0700)
+	require.NoError(err)
+
+	backup, err = NewPrefixFS(base, volume+"/backup")
+	require.NoError(err)
+
+	err = backup.MkdirAll(volume+"/", 0700)
+	require.NoError(err)
 
 	// hide backup locations in base filesystem
-	base, err = NewHiddenFS(base, "/backup", "/backup.file")
-	if err != nil {
-		panic(err)
-	}
+	base, err = NewHiddenFS(base, volume+"/backup", volume+"/backup.file")
+	require.NoError(err)
+
 	backupFS = NewBackupFS(
 		base,
 		backup,
@@ -901,7 +901,7 @@ func NewTestBackupFS() (root, base, backup FS, backupFS *BackupFS) {
 func TestCreateFileInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		originalLinkedDir   = "/usr/lib"
@@ -936,7 +936,7 @@ func TestCreateFileInSymlinkDir(t *testing.T) {
 func TestMkdirInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		originalLinkedDir   = "/usr/lib"
@@ -967,7 +967,7 @@ func TestMkdirInSymlinkDir(t *testing.T) {
 func TestRemoveDirInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
-	_, base, backup, backupFS := NewTestBackupFS()
+	_, base, backup, backupFS := NewTestBackupFS(t)
 
 	var (
 		originalLinkedDir   = "/usr/lib"

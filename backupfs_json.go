@@ -2,7 +2,6 @@ package backupfs
 
 import (
 	"io/fs"
-	"path"
 	"path/filepath"
 	"time"
 )
@@ -28,7 +27,8 @@ type fInfo struct {
 }
 
 func (fi *fInfo) Name() string {
-	return path.Base(fi.FileName)
+	name := filepath.Base(filepath.FromSlash(fi.FileName))
+	return name
 }
 func (fi *fInfo) Size() int64 {
 	return fi.FileSize

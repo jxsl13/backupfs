@@ -39,19 +39,12 @@ func New(backupLocation string, opts ...BackupFSOption) *BackupFS {
 // The returned BackupFS is OS-independent and can also be used with Windows paths.
 func NewWithFS(baseFS FS, backupLocation string, opts ...BackupFSOption) *BackupFS {
 
-	volumeFS := baseFS
-	volumeName := filepath.VolumeName(backupLocation)
-	if volumeName != "" {
-		volumeFS = NewVolumeFS(volumeName, baseFS)
-		backupLocation = backupLocation[len(volumeName):] // trim volume
-	}
-
-	hiddenFS, err := NewHiddenFS(volumeFS, backupLocation)
+	hiddenFS, err := NewHiddenFS(baseFS, backupLocation)
 	if err != nil {
 		panic(err) // not supposed to happen, because we trim the volume prefix above
 	}
 
-	backupFS, err := NewPrefixFS(volumeFS, backupLocation)
+	backupFS, err := NewPrefixFS(baseFS, backupLocation)
 	if err != nil {
 		panic(err) // not supposed to happen, because we trim the volume prefix above
 	}
@@ -692,7 +685,7 @@ func (fsys *BackupFS) Rollback() (multiErr error) {
 			// case where file must be removed in base file system
 			// finished
 			continue
-		} else if TrimVolume(path) == separator {
+		} else if filepath.Base(path) == separator {
 			// skip root directory from restoration
 			continue
 		}

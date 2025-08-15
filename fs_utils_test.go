@@ -1,23 +1,25 @@
 package backupfs
 
 import (
-	"path"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jxsl13/backupfs/internal/testutils"
 	"github.com/stretchr/testify/require"
 )
 
 func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
 	t.Parallel()
 
-	_, base, _, _ := NewTestBackupFS()
+	_, base, _, _ := NewTestBackupFS(t)
 
 	var (
-		originalSubDir   = "/usr/lib/systemd/system"
-		originalFilePath = "/usr/lib/systemd/system/test.txt" // file is never created
-		symlinkDir       = "/lib"
-		symlinkFilePath  = "/lib/systemd/system/test.txt"
+		err              error
+		originalSubDir   = testutils.AbsFilePath(t, "/usr/lib/systemd/system")
+		originalFilePath = testutils.AbsFilePath(t, "/usr/lib/systemd/system/test.txt") // file is never created
+		symlinkDir       = testutils.AbsFilePath(t, "/lib")
+		symlinkFilePath  = testutils.AbsFilePath(t, "/lib/systemd/system/test.txt")
 	)
 
 	// prepare existing files
@@ -34,19 +36,19 @@ func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
 func TestResolveCircularSymlinkPath(t *testing.T) {
 	t.Parallel()
 
-	_, base, _, _ := NewTestBackupFS()
+	_, base, _, _ := NewTestBackupFS(t)
 
 	var (
-		folders = "/usr/lib/systemd"
+		folders = testutils.AbsFilePath(t, "/usr/lib/systemd")
 
-		symlink1  = "/lib"
-		pointsAt1 = "/usr/lib"
+		symlink1  = testutils.AbsFilePath(t, "/lib")
+		pointsAt1 = testutils.AbsFilePath(t, "/usr/lib")
 
-		symlink2  = "/usr/lib/systemd/system"
-		pointsAt2 = "/usr"
+		symlink2  = testutils.AbsFilePath(t, "/usr/lib/systemd/system")
+		pointsAt2 = testutils.AbsFilePath(t, "/usr")
 
-		filePath        = "/usr/test.txt"
-		symlinkFilePath = "/lib/systemd/system/test.txt"
+		filePath        = testutils.AbsFilePath(t, "/usr/test.txt")
+		symlinkFilePath = testutils.AbsFilePath(t, "/lib/systemd/system/test.txt")
 	)
 
 	// prepare existing files
@@ -70,15 +72,15 @@ func TestResolveCircularSymlinkPath(t *testing.T) {
 func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 	t.Parallel()
 
-	_, base, _, _ := NewTestBackupFS()
+	_, base, _, _ := NewTestBackupFS(t)
 
 	var (
-		originalLinkedDir   = "/usr/lib"
-		originalSubDir      = "/usr/lib/systemd/system"
-		originalFilePath    = "/usr/lib/systemd/system/test.txt"
+		originalLinkedDir   = testutils.AbsFilePath(t, "/usr/lib")
+		originalSubDir      = testutils.AbsFilePath(t, "/usr/lib/systemd/system")
+		originalFilePath    = testutils.AbsFilePath(t, "/usr/lib/systemd/system/test.txt")
 		originalFileContent = "test_content"
-		symlinkDir          = "/lib"
-		symlinkFilePath     = "/lib/systemd/system/test.txt"
+		symlinkDir          = testutils.AbsFilePath(t, "/lib")
+		symlinkFilePath     = testutils.AbsFilePath(t, "/lib/systemd/system/test.txt")
 	)
 
 	// prepare existing files
@@ -95,16 +97,16 @@ func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 func TestResolvePathWithRelativeSymlink(t *testing.T) {
 	t.Parallel()
 
-	_, base, _, _ := NewTestBackupFS()
+	_, base, _, _ := NewTestBackupFS(t)
 
 	var (
-		originalLinkedDir   = "/usr/lib"
-		originalSubDir      = path.Join(originalLinkedDir, "/systemd/system")
-		originalFilePath    = path.Join(originalSubDir, "test.txt")
+		originalLinkedDir   = testutils.AbsFilePath(t, "/usr/lib")
+		originalSubDir      = filepath.Join(originalLinkedDir, "/systemd/system")
+		originalFilePath    = filepath.Join(originalSubDir, "test.txt")
 		originalFileContent = "test_content"
-		symlinkDir          = "/lib"
-		symlinkSubDir       = path.Join(symlinkDir, "/systemd/system")
-		symlinkFilePath     = path.Join(symlinkSubDir, "test.txt")
+		symlinkDir          = testutils.AbsFilePath(t, "/lib")
+		symlinkSubDir       = filepath.Join(symlinkDir, "/systemd/system")
+		symlinkFilePath     = filepath.Join(symlinkSubDir, "test.txt")
 	)
 
 	// prepare existing files
@@ -115,19 +117,19 @@ func TestResolvePathWithRelativeSymlink(t *testing.T) {
 	resolvedPath, found, err := resolvePathWithFound(base, symlinkFilePath)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, filepath.FromSlash(originalFilePath), resolvedPath)
+	require.Equal(t, originalFilePath, resolvedPath)
 }
 
 func TestResolveFilePathWithRelativeSymlink(t *testing.T) {
 	t.Parallel()
 
-	_, base, _, _ := NewTestBackupFS()
+	_, base, _, _ := NewTestBackupFS(t)
 
 	var (
-		originalSubDir      = "/usr/lib/systemd/system"
-		originalFilePath    = "/usr/lib/systemd/system/test.txt"
+		originalSubDir      = testutils.AbsFilePath(t, "/usr/lib/systemd/system")
+		originalFilePath    = testutils.AbsFilePath(t, "/usr/lib/systemd/system/test.txt")
 		originalFileContent = "test_content"
-		symlinkFile         = "/usr/lib/linked_file"
+		symlinkFile         = testutils.AbsFilePath(t, "/usr/lib/linked_file")
 	)
 
 	// prepare existing files
@@ -141,11 +143,20 @@ func TestResolveFilePathWithRelativeSymlink(t *testing.T) {
 
 	// the final file is a symlink that points to a different file.
 	// we only want to resolve the path leading to the symlink, not the symlink itself.
-	require.Equal(t, symlinkFile, resolvedPath)
+	require.Equal(t, originalFilePath, resolvedPath)
+}
+
+func currentVolumePrefix() string {
+	pwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.VolumeName(pwd) + separator
 }
 
 func TestIterateDirTreeAbsolute(t *testing.T) {
-	filePath := filepath.Join(separator, "a", "b", "c", "d", "test.txt")
+	volumePrefix := currentVolumePrefix()
+	filePath := filepath.Join(volumePrefix, "a", "b", "c", "d", "test.txt")
 
 	parts := make([]string, 0, 6)
 	_, err := IterateDirTree(filePath, func(s string) (proceed bool, err error) {
@@ -155,12 +166,12 @@ func TestIterateDirTreeAbsolute(t *testing.T) {
 	require.NoError(t, err)
 
 	expected := []string{
-		separator,
-		filepath.Join(separator, "a"),
-		filepath.Join(separator, "a", "b"),
-		filepath.Join(separator, "a", "b", "c"),
-		filepath.Join(separator, "a", "b", "c", "d"),
-		filepath.Join(separator, "a", "b", "c", "d", "test.txt"),
+		volumePrefix,
+		filepath.Join(volumePrefix, "a"),
+		filepath.Join(volumePrefix, "a", "b"),
+		filepath.Join(volumePrefix, "a", "b", "c"),
+		filepath.Join(volumePrefix, "a", "b", "c", "d"),
+		filepath.Join(volumePrefix, "a", "b", "c", "d", "test.txt"),
 	}
 	require.Equal(t, expected, parts)
 }

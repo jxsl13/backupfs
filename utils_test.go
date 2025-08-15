@@ -112,15 +112,15 @@ func removeAll(t *testing.T, fsys FS, path string) {
 func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	require := require.New(t)
 
-	oldpath = filepath.Clean(oldpath)
-	newpath = filepath.Clean(newpath)
+	oldpath = filepath.Clean(filepath.FromSlash(oldpath))
+	newpath = filepath.Clean(filepath.FromSlash(newpath))
 
-	oldpath = toAbsSymlink(oldpath, newpath)
+	absOldpath := toAbsSymlink(oldpath, newpath)
 
-	_, _, err := lexists(fsys, oldpath)
+	_, _, err := lexists(fsys, absOldpath)
 	require.NoError(err)
 
-	dirPath := filepath.Dir(oldpath)
+	dirPath := filepath.Dir(absOldpath)
 	_, found, err := lexists(fsys, dirPath)
 	require.NoError(err)
 	if !found {
@@ -146,7 +146,7 @@ func createSymlink(t *testing.T, fsys FS, oldpath, newpath string) {
 	require.True(hasSymlinkFlag, "the target(newpath) symlink does not have the symlink flag set: ", newpath)
 
 	// check oldpath after creating the symlink
-	fi, err = fsys.Lstat(oldpath)
+	fi, err = fsys.Lstat(absOldpath)
 	switch {
 	case err == nil:
 		hasSymlinkFlag = fi.Mode()&os.ModeType&os.ModeSymlink != 0
@@ -283,9 +283,10 @@ func chmod(t *testing.T, fsys FS, path string, perm fs.FileMode) {
 
 func countFiles(t *testing.T, fsys FS, path string, expectedFilesAndDirs int) {
 	require := require.New(t)
-	path = filepath.Clean(path)
+	absPath, err := filepath.Abs(path)
+	require.NoError(err)
 
-	files, err := allFiles(fsys, path)
+	files, err := allFiles(fsys, absPath)
 	require.NoError(err)
 
 	sort.Strings(files)
@@ -305,8 +306,12 @@ func mustEqualFSState(t *testing.T, before []pathState, fsys FS, entrypoint stri
 }
 
 func newFSState(fsys FS, entrypoint string) ([]pathState, error) {
+	absEntrypoint, err := filepath.Abs(filepath.FromSlash(entrypoint))
+	if err != nil {
+		return nil, err
+	}
 	var paths []pathState
-	err := Walk(fsys, entrypoint, func(path string, info fs.FileInfo, err error) error {
+	err = Walk(fsys, absEntrypoint, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
