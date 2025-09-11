@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -305,16 +306,23 @@ func mustEqualFSState(t *testing.T, before []pathState, fsys FS, entrypoint stri
 	require.Equal(t, before, after)
 }
 
-func newFSState(fsys FS, entrypoint string) ([]pathState, error) {
+func newFSState(fsys FS, entrypoint string, relative ...bool) ([]pathState, error) {
 	absEntrypoint, err := filepath.Abs(filepath.FromSlash(entrypoint))
 	if err != nil {
 		return nil, err
 	}
+
+	rel := false
+	if len(relative) > 0 {
+		rel = relative[0]
+	}
+
 	var paths []pathState
 	err = Walk(fsys, absEntrypoint, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
+
 		content := ""
 		if info.Mode().IsRegular() {
 			f, err := fsys.Open(path)
@@ -332,11 +340,26 @@ func newFSState(fsys FS, entrypoint string) ([]pathState, error) {
 			if err != nil {
 				return err
 			}
+
+			if rel {
+				content = strings.TrimPrefix(content, absEntrypoint)
+				content = strings.TrimLeft(content, separator)
+			}
+		}
+
+		name := info.Name()
+		if rel {
+			path = strings.TrimPrefix(path, absEntrypoint)
+			path = strings.TrimLeft(path, separator)
+
+			if path == "" {
+				name = separator
+			}
 		}
 
 		paths = append(paths, pathState{
 			Path:    path,
-			Name:    info.Name(),
+			Name:    name,
 			Size:    info.Size(),
 			Mode:    info.Mode(),
 			Content: content,
