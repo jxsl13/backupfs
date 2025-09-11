@@ -12,9 +12,14 @@ import (
 // TempDir creates a new temporary directory in the directory dir with a name
 // that has the prefix prefix and returns the path of the new directory.
 // If dir is the empty string, TempDir uses the default OS temp directory.
-func TempDir(fsys FS, dir, prefix string) (name string, err error) {
+func TempDir(fsys FS, dir string, prefix ...string) (name string, err error) {
 	if dir == "" {
 		dir = os.TempDir()
+	}
+
+	pref := ""
+	if len(prefix) > 0 {
+		pref = prefix[0]
 	}
 
 	const (
@@ -23,7 +28,7 @@ func TempDir(fsys FS, dir, prefix string) (name string, err error) {
 	)
 
 	for i := 0; i < 10000; i++ {
-		tmpDirName := randStringFromCharSetWithPrefix(randLen, charSetAlphaNum, prefix)
+		tmpDirName := randStringFromCharSetWithPrefix(randLen, charSetAlphaNum, pref)
 		try := filepath.Join(dir, tmpDirName)
 		err = fsys.MkdirAll(try, perm)
 		if errors.Is(err, fs.ErrExist) {

@@ -3,6 +3,7 @@ package backupfs
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jxsl13/backupfs/internal/testutils"
@@ -152,6 +153,14 @@ func currentVolumePrefix() string {
 		panic(err)
 	}
 	return filepath.VolumeName(pwd) + separator
+}
+
+func currentVolumeDriverLetter() string {
+	pwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	return strings.TrimRight(filepath.VolumeName(pwd), ":")
 }
 
 func TestIterateDirTreeAbsolute(t *testing.T) {
