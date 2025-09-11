@@ -997,10 +997,10 @@ func TestRemoveDirInSymlinkDir(t *testing.T) {
 }
 
 func CallerPathTmp(up ...int) string {
-	caller := 1
+	caller := 0
 	if len(up) > 0 {
 		caller += up[0]
 	}
-	funcName := strings.TrimPrefix(path.Ext(testutils.CallerFuncName(caller)), ".")
+	funcName := strings.TrimPrefix(filepath.Ext(testutils.CallerFuncName(caller)), ".")
 	return testutils.FilePath(filepath.Join("tmp", funcName))
 }
