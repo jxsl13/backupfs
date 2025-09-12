@@ -13,14 +13,19 @@ import (
 func FuzzPrefixFS(f *testing.F) {
 
 	var (
-		rootPath  = CallerPathTmp()
-		rootFS    = NewTempDirPrefixFS(rootPath)
-		prefix    = filepath.FromSlash("/some/test/prefix/01/test/02")
-		fsys, err = NewPrefixFS(rootFS, prefix)
-		fileName  = "prefixfs_test.txt"
+		rootPath = FuncPathTmp()
+		rootFS   = NewTempDirPrefixFS(rootPath)
+		prefix   = filepath.FromSlash("/some/test/prefix/01/test/02")
+		fileName = "prefixfs_test.txt"
 	)
+	fsys, err := NewPrefixFS(rootFS, prefix)
 	if err != nil {
-		panic(err)
+		f.Fatal(err)
+	}
+
+	prefix, err = filepath.Abs(prefix)
+	if err != nil {
+		f.Fatal(err)
 	}
 
 	for _, seed := range []string{".", "/", "..", "\\", fileName} {
@@ -35,21 +40,21 @@ func FuzzPrefixFS(f *testing.F) {
 		}
 		require := require.New(t)
 
-		s, err := fsys.prefixPath(input)
+		_, s, err := fsys.prefixPath(input)
 		if err != nil {
 			// ignore returned errors
 			return
 		}
 
 		// if we were able to prefix the path then the prefix must be present
-		if !strings.HasPrefix(s, prefix) {
+		if !strings.HasPrefix(s, fsys.prefix) {
 			require.Error(err)
 			require.ErrorIs(err, fs.ErrNotExist, "expecting returned error to be of type fs.ErrNotExist")
 			return
 		}
 
 		// prefix file must not have any prefix, require that prefix is hidden.
-		hasPrefix := strings.HasPrefix(f.Name(), prefix)
+		hasPrefix := strings.HasPrefix(f.Name(), fsys.prefix)
 		require.Falsef(hasPrefix, "expecting file to not have prefix: %v", prefix)
 
 	})

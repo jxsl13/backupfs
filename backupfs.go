@@ -39,19 +39,12 @@ func New(backupLocation string, opts ...BackupFSOption) *BackupFS {
 // The returned BackupFS is OS-independent and can also be used with Windows paths.
 func NewWithFS(baseFS FS, backupLocation string, opts ...BackupFSOption) *BackupFS {
 
-	volumeFS := baseFS
-	volumeName := filepath.VolumeName(backupLocation)
-	if volumeName != "" {
-		volumeFS = NewVolumeFS(volumeName, baseFS)
-		backupLocation = backupLocation[len(volumeName):] // trim volume
-	}
-
-	hiddenFS, err := NewHiddenFS(volumeFS, backupLocation)
+	hiddenFS, err := NewHiddenFS(baseFS, backupLocation)
 	if err != nil {
 		panic(err) // not supposed to happen, because we trim the volume prefix above
 	}
 
-	backupFS, err := NewPrefixFS(volumeFS, backupLocation)
+	backupFS, err := NewPrefixFS(baseFS, backupLocation)
 	if err != nil {
 		panic(err) // not supposed to happen, because we trim the volume prefix above
 	}
@@ -368,7 +361,10 @@ func (fsys *BackupFS) remove(name string) (err error) {
 		}
 	}()
 
-	resolvedName, err := fsys.realPath(name)
+	// we do not resolve the final part of the path, because that is the
+	// symlink or file or directory that we want to backup.
+	// contrary to othe roperations, removing does remove the symlink, in case it is a symlink.
+	resolvedName, err := fsys.realParentPath(name)
 	if err != nil {
 		return err
 	}
@@ -397,7 +393,9 @@ func (fsys *BackupFS) RemoveAll(name string) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	// we do not want to resolve the final symlink part of the path in order to actually
+	// interact with the symlink, in this case remove it instead of the file that it points to.
+	resolvedName, err := fsys.realParentPath(name)
 	if err != nil {
 		return err
 	}
@@ -692,7 +690,7 @@ func (fsys *BackupFS) Rollback() (multiErr error) {
 			// case where file must be removed in base file system
 			// finished
 			continue
-		} else if TrimVolume(path) == separator {
+		} else if filepath.Base(path) == separator {
 			// skip root directory from restoration
 			continue
 		}
@@ -877,6 +875,21 @@ func (fsys *BackupFS) tryRestoreFilePaths(restoreFilePaths []string) (multiErr e
 // returns the cleaned path
 func (fsys *BackupFS) realPath(name string) (resolvedName string, err error) {
 	return resolvePath(fsys, filepath.Clean(name))
+}
+
+// does not resolve final part of the path (filepath.Base)
+// this method is used by Remove and RemoveAll methods.
+// all parent directories that are symlinks are sesolved to be the actual directories
+// in order not to backup the same files twice, in case they are toched through the symlink or through the
+// original path.
+func (fsys *BackupFS) realParentPath(name string) (resolvedName string, err error) {
+	cpath := filepath.Clean(name)
+	parent, err := resolvePath(fsys, filepath.Dir(cpath))
+	if err != nil {
+		return parent, err
+	}
+	base := filepath.Base(cpath)
+	return filepath.Join(parent, base), nil
 }
 
 func (fsys *BackupFS) realPathWithFound(name string) (resolvedName string, found bool, err error) {

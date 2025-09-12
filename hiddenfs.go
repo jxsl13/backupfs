@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,10 +33,14 @@ func NewHiddenFS(base FS, hiddenPaths ...string) (_ *HiddenFS, err error) {
 			err = fmt.Errorf("failed to create HiddenFS: %w", err)
 		}
 	}()
-	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 
+	// we want absolute paths in here
+	normalizedHiddenPaths := make([]string, 0, len(hiddenPaths))
 	for _, p := range hiddenPaths {
-		normalizedPath := filepath.Clean(filepath.FromSlash(p))
+		normalizedPath, err := filepath.Abs(filepath.FromSlash(p))
+		if err != nil {
+			return nil, fmt.Errorf("failed to normalize hidden path %q: %w", p, err)
+		}
 		normalizedHiddenPaths = append(normalizedHiddenPaths, normalizedPath)
 	}
 
@@ -164,6 +167,7 @@ func (s *HiddenFS) Remove(name string) error {
 // RemoveAll removes a directory path and any children it contains. It
 // does not fail if the path does not exist (return nil).
 func (s *HiddenFS) RemoveAll(name string) error {
+
 	hidden, err := s.isHidden(name)
 	if err != nil {
 		return &os.PathError{Op: "remove_all", Path: name, Err: wrapErrHiddenCheckFailed(err)}
@@ -368,7 +372,7 @@ func (s *HiddenFS) Symlink(oldname, newname string) error {
 
 	// not allowed to symlink into hidden directory
 
-	if path.IsAbs(filepath.ToSlash(oldname)) || filepath.IsAbs(filepath.FromSlash(oldname)) {
+	if isAbs(oldname) {
 		hidden, err = s.isHidden(oldname)
 	} else {
 		startingDir := filepath.Dir(newname)
@@ -454,9 +458,35 @@ func isParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 const relParent = ".." + string(os.PathSeparator)
 
 func dirContains(parent, subdir string) (bool, error) {
+
+	// Try filepath.Rel with the normalized paths first
 	relPath, err := filepath.Rel(parent, subdir)
 	if err != nil {
-		return false, err
+		// If that fails, try making both paths absolute (for Windows compatibility)
+		var absParent, absSubdir string
+
+		if filepath.IsAbs(parent) {
+			absParent = parent
+		} else {
+			absParent, err = filepath.Abs(parent)
+			if err != nil {
+				return false, err
+			}
+		}
+
+		if filepath.IsAbs(subdir) {
+			absSubdir = subdir
+		} else {
+			absSubdir, err = filepath.Abs(subdir)
+			if err != nil {
+				return false, err
+			}
+		}
+
+		relPath, err = filepath.Rel(absParent, absSubdir)
+		if err != nil {
+			return false, err
+		}
 	}
 	relPath = filepath.FromSlash(relPath)
 
@@ -467,9 +497,35 @@ func dirContains(parent, subdir string) (bool, error) {
 }
 
 func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
+
+	// Try filepath.Rel with the normalized paths first
 	relPath, err = filepath.Rel(hiddenDir, name)
 	if err != nil {
-		return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
+		// If that fails, try making both paths absolute (for Windows compatibility)
+		var absName, absHiddenDir string
+
+		if filepath.IsAbs(name) {
+			absName = name
+		} else {
+			absName, err = filepath.Abs(name)
+			if err != nil {
+				return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
+			}
+		}
+
+		if filepath.IsAbs(hiddenDir) {
+			absHiddenDir = hiddenDir
+		} else {
+			absHiddenDir, err = filepath.Abs(hiddenDir)
+			if err != nil {
+				return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
+			}
+		}
+
+		relPath, err = filepath.Rel(absHiddenDir, absName)
+		if err != nil {
+			return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
+		}
 	}
 
 	relPath = filepath.FromSlash(relPath)
@@ -494,10 +550,13 @@ func isHidden(name string, hiddenPaths []string) (bool, error) {
 	}
 
 	// file normalization allows to use a single filepath separator
-	name = filepath.Clean(filepath.FromSlash(name))
+	absName, err := filepath.Abs(filepath.FromSlash(name))
+	if err != nil {
+		return false, fmt.Errorf("failed to make path absolute %s: %w", name, err)
+	}
 
 	for _, hiddenDir := range hiddenPaths {
-		_, hidden, err := isInHiddenPath(name, hiddenDir)
+		_, hidden, err := isInHiddenPath(absName, hiddenDir)
 		if err != nil {
 			return false, err
 		}

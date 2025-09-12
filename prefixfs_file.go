@@ -2,41 +2,29 @@ package backupfs
 
 import (
 	"io/fs"
-	"strings"
 )
 
 var _ File = (*prefixFile)(nil)
 
 // filePath and prefix are expected to be normalized (filepath.Clean) paths
-func newPrefixFile(f File, filePath, prefix string) File {
-	var (
-		nameOverride = ""
-		baseName     = f.Name()
-	)
-
-	if filePath == prefix {
-		nameOverride = separator
-	} else if prefix != "" && strings.HasPrefix(baseName, prefix) {
-		nameOverride = strings.TrimPrefix(baseName, prefix)
-	}
-
+func newPrefixFile(f File, openPath, absolutePath string) File {
+	// seemingly on Windows File.Name() and FileInfo.Name() behave differently
 	return &prefixFile{
 		f:            f,
-		nameOverride: nameOverride,
+		openPath:     openPath,
+		absolutePath: absolutePath,
 	}
 }
 
 type prefixFile struct {
 	f            File
-	nameOverride string
+	openPath     string
+	absolutePath string
 }
 
 func (pf *prefixFile) Name() string {
 	// hide the existence of the prefix
-	if pf.nameOverride != "" {
-		return pf.nameOverride
-	}
-	return pf.f.Name()
+	return pf.openPath
 }
 func (pf *prefixFile) Readdir(count int) ([]fs.FileInfo, error) {
 	return pf.f.Readdir(count)
@@ -45,7 +33,11 @@ func (pf *prefixFile) Readdirnames(n int) ([]string, error) {
 	return pf.f.Readdirnames(n)
 }
 func (pf *prefixFile) Stat() (fs.FileInfo, error) {
-	return pf.f.Stat()
+	fi, err := pf.f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	return newPrefixFileInfo(fi, pf.absolutePath), nil
 }
 func (pf *prefixFile) Sync() error {
 	return pf.f.Sync()

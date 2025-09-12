@@ -2,26 +2,15 @@ package backupfs
 
 import (
 	"io/fs"
-	"strings"
+	"path/filepath"
 	"time"
 )
 
 // filePath and prefix are expected to be normalized (filepath.Clean) paths
-func newPrefixFileInfo(base fs.FileInfo, filePath, prefix string) fs.FileInfo {
-	var (
-		nameOverride = ""
-		baseName     = base.Name()
-	)
-
-	if filePath == prefix {
-		nameOverride = separator
-	} else if prefix != "" && strings.HasPrefix(baseName, prefix) {
-		nameOverride = strings.TrimPrefix(baseName, prefix)
-	}
-
+func newPrefixFileInfo(base fs.FileInfo, absolute string) fs.FileInfo {
 	return &prefixFileInfo{
 		baseFi:       base,
-		nameOverride: nameOverride,
+		nameOverride: filepath.Base(absolute),
 	}
 }
 

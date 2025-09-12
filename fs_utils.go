@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -23,21 +22,25 @@ var (
 	errCopySymlinkFailed = errors.New("failed to copy symlink")
 )
 
+// Unix:
 // / -> /a -> /a/b -> /a/b/c -> /a/b/c/d
+// or Windows:
+// c:\ -> c:\a -> c:\a\ -> c:\a\b\c -> c:\a\b\c\d
 // IterateDirTree does not clean the passed file name.
 func IterateDirTree(name string, visitor func(string) (proceed bool, err error)) (aborted bool, err error) {
 
 	var (
-		create    = false
-		lastIndex = 0
-		proceed   = true
+		create      = false
+		lastIndex   = 0
+		proceed     = true
+		volumeIndex = len(filepath.VolumeName(name)) + 1 // works for root dir / and volume c:\
 	)
 	for i, r := range name {
 		create = false
 
-		if r == '/' || r == filepath.Separator {
+		if r == filepath.Separator || r == '/' {
 			create = true
-			lastIndex = max(i, 1) // root element should be visible
+			lastIndex = max(i, volumeIndex) // root element should be visible with its trailing separator
 		}
 		if i == len(name)-1 {
 			create = true
@@ -108,8 +111,8 @@ func copyDir(fsys FS, name string, info fs.FileInfo) (err error) {
 	// on for example redhat it's a read only directory which is not modifiable.
 	// on the other hand it is the root directory of the backup folder which has already its permissions
 	// set correctly.
-	pathWithoutVolume := TrimVolume(name)
-	if pathWithoutVolume == separator || pathWithoutVolume == "/" {
+	base := filepath.Base(name)
+	if base == separator || base == "/" {
 		// windows supports both path separators, which is why we check for both
 		return nil
 	}
@@ -394,7 +397,7 @@ func toAbsSymlink(oldname, newname string) string {
 //}
 
 func isAbs(name string) bool {
-	return path.IsAbs(filepath.ToSlash(name)) || filepath.IsAbs(filepath.FromSlash(name))
+	return filepath.IsAbs(filepath.FromSlash(name))
 }
 
 type resolverFS interface {
@@ -430,9 +433,14 @@ func resolvePathWithInfo(fsys resolverFS, filePath string) (resolvedFilePath str
 		return "", nil, errors.New("empty file path")
 	}
 
+	absFilePath, err := filepath.Abs(filepath.FromSlash(filePath))
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to make path %s absolute: %w", filePath, err)
+	}
+
 	accPaths := make([]string, 0, strings.Count(filePath, separator))
 	// collect all subdir segments
-	_, _ = IterateDirTree(filePath, func(subdirPath string) (bool, error) {
+	_, _ = IterateDirTree(absFilePath, func(subdirPath string) (bool, error) {
 		accPaths = append(accPaths, subdirPath)
 		return true, nil
 	})
@@ -447,7 +455,7 @@ func resolvePathWithInfo(fsys resolverFS, filePath string) (resolvedFilePath str
 			if isNotFoundError(err) {
 
 				// return current resolved path state even if it was not found
-				// e.g. /a/symlink/test.txt with /a/symlink pointing to /a/folder, then the resolved nam ewill be /a/folder/test.txt
+				// e.g. /a/symlink/test.txt with /a/symlink pointing to /a/folder, then the resolved name will be /a/folder/test.txt
 				return accPaths[len(accPaths)-1], nil, nil
 			}
 			return "", nil, err
@@ -463,7 +471,7 @@ func resolvePathWithInfo(fsys resolverFS, filePath string) (resolvedFilePath str
 			linkedPath = toAbsSymlink(linkedPath, p)
 
 			// update slice in place for all following paths after the symlink
-			replacePathPrefix(accPaths[i+1:], p, linkedPath)
+			replacePathPrefix(accPaths[i:], p, linkedPath)
 		}
 	}
 
