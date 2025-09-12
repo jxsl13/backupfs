@@ -648,8 +648,8 @@ func TestBackupFS_Symlink(t *testing.T) {
 	// potential problem case:
 	// Symlink creation fails midway due to another file, directory or symlink already existing.
 	// due to the writing character of the symlink method we do create a backup
-	// but fail to create a new symlink thus the backedup file and the old symlink are indeed the exact same
-	// not exactly a problem but may caus eunnecessary backe dup data
+	// but fail to create a new symlink thus the backed up file and the old symlink are indeed the exact same
+	// not exactly a problem but may cause unnecessary backed up data
 	createSymlink(t, backupFS, filepath.Join(fileDir2, "/test02.txt"), filepath.Join(fileDirRoot, "/file_symlink"))
 
 	symlinkMustExistWithTragetPath(t, backupFS, filepath.Join(fileDirRoot, "/file_symlink"), filepath.Join(fileDir2, "/test02.txt"))
@@ -1003,4 +1003,9 @@ func CallerPathTmp(up ...int) string {
 	}
 	funcName := strings.TrimPrefix(filepath.Ext(testutils.CallerFuncName(caller)), ".")
 	return testutils.FilePath(filepath.Join("tmp", funcName))
+}
+
+func TestRemoveSymlinkedFile(t *testing.T) {
+	t.Parallel()
+
 }
