@@ -179,7 +179,7 @@ func TestHiddenFS_RemoveAll(t *testing.T) {
 	err := fsys.RemoveAll(hiddenDirParent)
 	require.NoError(err)
 
-	// at the end the hidden directory should containthe same number of files as before
+	// at the end the hidden directory should contain the same number of files as before
 	countFiles(t, base, hiddenDir, 2)
 	countFiles(t, fsys, hiddenDirParent, 1)
 }
@@ -253,7 +253,7 @@ func SetupTempDirHiddenFSTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenF
 	hiddenDir = testutils.AbsFilePath(t, "/var/opt/backups")
 	hiddenFile = "hidden_file.txt"
 
-	base, fs = newTestTempDirHiddenFS(t, 1, hiddenDir)
+	base, fs = newTestTempDirHiddenFS(t, 2, hiddenDir)
 
 	mkdir(t, base, hiddenDirParent, 0775)
 	mkdirAll(t, base, hiddenDir, 0775)

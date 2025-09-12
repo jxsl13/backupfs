@@ -113,7 +113,7 @@ func TestPrefixFSRemoveAllSymlinksBehavior(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc // capture loop variable
 		t.Run(tc.name, func(t *testing.T) {
-			//t.Parallel()
+			t.Parallel()
 
 			rootPath := filepath.Join(rootPath, tc.name)
 			osFS := NewOSFS()
