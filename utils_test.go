@@ -323,6 +323,8 @@ func newFSState(fsys FS, entrypoint string, relative ...bool) ([]pathState, erro
 			return err
 		}
 
+		size := info.Size()
+
 		content := ""
 		if info.Mode().IsRegular() {
 			f, err := fsys.Open(path)
@@ -344,6 +346,7 @@ func newFSState(fsys FS, entrypoint string, relative ...bool) ([]pathState, erro
 			if rel {
 				content = strings.TrimPrefix(content, absEntrypoint)
 				content = strings.TrimLeft(content, separator)
+				size = int64(len(content))
 			}
 		}
 
@@ -360,7 +363,7 @@ func newFSState(fsys FS, entrypoint string, relative ...bool) ([]pathState, erro
 		paths = append(paths, pathState{
 			Path:    path,
 			Name:    name,
-			Size:    info.Size(),
+			Size:    size,
 			Mode:    info.Mode(),
 			Content: content,
 		})
