@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -119,7 +118,7 @@ func TestPrefixFS_RemoveAllSymlinksBehavior(t *testing.T) {
 			osFS := NewOSFS()
 
 			// Create a unique base directory for this test
-			testBasePath, err := TempDir(osFS, rootPath, fmt.Sprintf("%s-", time.Now().Format("2006-01-02_15-04-05.000")))
+			testBasePath, err := TempDir(osFS, rootPath, fmt.Sprintf("%s-", TimesStamp()))
 			require.NoError(t, err)
 
 			// Create subdirectories for OS and PrefixFS testing

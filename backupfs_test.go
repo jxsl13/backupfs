@@ -2,7 +2,6 @@ package backupfs
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -834,7 +833,7 @@ func TestTime(t *testing.T) {
 func NewTempDirPrefixFS(rootDir string) *PrefixFS {
 	var osFS = NewOSFS()
 
-	tempDir, err := TempDir(osFS, rootDir, fmt.Sprintf("%s-", time.Now().Format("2006-01-02_15-04-05.000")))
+	tempDir, err := TempDir(osFS, rootDir, TimesStamp())
 	if err != nil {
 		panic(err)
 	}
@@ -1016,98 +1015,252 @@ func FuncPathTmp(up ...int) string {
 	return PathTmp(testutils.FuncName(caller + 1))
 }
 
+// TestBackupFS_RemoveFileSymlink tests the behavior of BackupFS when removing a directory
+// that contains symlinks pointing to files and directories outside the removed directory.
+//
+// This test verifies several critical aspects of BackupFS symlink handling:
+// 1. Symlinks are properly backed up when their containing directory is removed
+// 2. Target files/directories remain intact when symlinks pointing to them are removed
+// 3. Rollback functionality correctly restores all symlinks and directory structure
+// 4. Filesystem state is completely preserved across remove/rollback operations
+//
+// Test Setup:
+// Creates a directory structure with two separate directory trees:
+//   - /dir1/ - Contains symlinks that will be removed
+//     ├── link_to_file -> /dir2/dir3/file.txt (symlink to file)
+//     └── link_to_dir -> /dir2/dir3/ (symlink to directory)
+//   - /dir2/dir3/ - Contains target resources
+//     └── file.txt - Target file with test content
+//
+// Test Flow:
+// 1. Setup: Create directory structure, target file, and symlinks
+// 2. Verify: Confirm all symlinks exist and point to correct targets
+// 3. Capture: Record initial filesystem state for both base and backup filesystems
+// 4. Remove: Delete /dir1/ (containing symlinks) using BackupFS.RemoveAll()
+// 5. Verify: Ensure symlinks are removed but targets remain intact
+// 6. Verify: Confirm symlinks and directory are properly backed up
+// 7. Rollback: Restore filesystem to initial state using BackupFS.Rollback()
+// 8. Verify: Confirm filesystem state matches exactly with initial capture
+// 9. Verify: Ensure all symlinks, targets, and directory structure are restored
 func TestBackupFS_RemoveFileSymlink(t *testing.T) {
 	t.Parallel()
 
-	// Setup test filesystems
+	// Initialize BackupFS test environment with base, backup, and backupFS instances
 	_, base, backup, backupFS := NewTestBackupFS(t)
 
-	// Create a target file that the symlink will point to
 	var (
-		targetFile  = "/dir/file.txt"
-		symlinkPath = "/symlink_to_file"
-		fileContent = "test content for symlink target"
+		// Directory structure layout:
+		// /dir1/link_to_file -> /dir2/dir3/file.txt (file symlink)
+		// /dir1/link_to_dir -> /dir2/dir3 (directory symlink)
+		dir1        = testutils.AbsFilePath(t, "/dir1")      // Directory containing symlinks (to be removed)
+		dir3        = testutils.AbsFilePath(t, "/dir2/dir3") // Target directory for symlinks
+		targetFile  = filepath.Join(dir3, "file.txt")        // Target file for file symlink
+		linkToFile  = filepath.Join(dir1, "link_to_file")    // Symlink pointing to targetFile
+		linkToDir   = filepath.Join(dir1, "link_to_dir")     // Symlink pointing to dir3
+		fileContent = "test content for symlink target"      // Content for target file
 	)
 
-	// Create the target file in the base filesystem
+	// === SETUP PHASE ===
+	// Create the required directory structure in the base filesystem
+	mkdirAll(t, base, dir1, 0755) // Create directory that will contain symlinks
+	mkdirAll(t, base, dir3, 0755) // Create target directory for symlinks
+
+	// Create the target file that one of the symlinks will point to
 	createFile(t, base, targetFile, fileContent)
 	fileMustContainText(t, base, targetFile, fileContent)
 
-	// Create a symlink pointing to the target file in the base filesystem
-	createSymlink(t, base, targetFile, symlinkPath)
-	symlinkMustExist(t, base, symlinkPath)
+	// Create symlinks in dir1 pointing to targets in dir2/dir3
+	createSymlink(t, base, targetFile, linkToFile) // File symlink: dir1/link_to_file -> dir2/dir3/file.txt
+	createSymlink(t, base, dir3, linkToDir)        // Directory symlink: dir1/link_to_dir -> dir2/dir3
 
-	// Capture the initial filesystem states
-	baseFSState := createFSState(t, base, "/")
-	backupFSState := createFSState(t, backup, "/")
+	// === VERIFICATION PHASE ===
+	// Verify that symlinks were created successfully and point to correct targets
+	symlinkMustExist(t, base, linkToFile)
+	symlinkMustExist(t, base, linkToDir)
+	symlinkMustExistWithTragetPath(t, base, linkToFile, targetFile)
+	symlinkMustExistWithTragetPath(t, base, linkToDir, dir3)
 
-	// Setup a comparison OS filesystem for behavior comparison
-	osFS := NewOSFS()
-	testBasePath := FuncPathTmp()
-	osTestDir, err := TempDir(osFS, testBasePath, fmt.Sprintf("%s-%s-", testutils.FuncName(), time.Now().Format("2006-01-02_15-04-05.000")))
+	// === STATE CAPTURE PHASE ===
+	// Capture initial filesystem states before any modifications
+	// This serves as the baseline for rollback verification
+	initialFSState := createFSState(t, base, "/")
+	initialBackupFSState := createFSState(t, backup, "/")
+
+	// === REMOVAL PHASE ===
+	// Remove dir1 (containing both symlinks) using BackupFS.RemoveAll
+	// This should backup the directory and its symlinks before removal
+	removeAll(t, backupFS, dir1)
+
+	// === POST-REMOVAL VERIFICATION PHASE ===
+	// Verify that dir1 and its symlinks are completely removed from base filesystem
+	mustNotExist(t, backupFS, dir1)    // Directory should not exist via BackupFS
+	mustNotExist(t, base, dir1)        // Directory should not exist in base filesystem
+	mustNotLExist(t, base, linkToFile) // File symlink should not exist
+	mustNotLExist(t, base, linkToDir)  // Directory symlink should not exist
+
+	// Verify that symlink targets remain intact (removal of symlinks shouldn't affect targets)
+	mustExist(t, base, targetFile)                        // Target file should still exist
+	mustExist(t, base, dir3)                              // Target directory should still exist
+	fileMustContainText(t, base, targetFile, fileContent) // Target file content should be unchanged
+
+	// Verify that removed directory and symlinks were properly backed up
+	mustExist(t, backup, dir1)              // Directory should exist in backup
+	mustLExist(t, backup, linkToFile)       // File symlink should be backed up
+	mustLExist(t, backup, linkToDir)        // Directory symlink should be backed up
+	symlinkMustExist(t, backup, linkToFile) // Backed up file symlink should be valid
+	symlinkMustExist(t, backup, linkToDir)  // Backed up directory symlink should be valid
+
+	// === ROLLBACK PHASE ===
+	// Test rollback functionality to restore the filesystem to initial state
+	err := backupFS.Rollback()
 	require.NoError(t, err)
 
-	// Create the same file structure in the OS filesystem for comparison
-	osTargetFile := filepath.Join(osTestDir, "target", "file.txt")
-	osSymlinkPath := filepath.Join(osTestDir, "symlink_to_file")
+	// === POST-ROLLBACK VERIFICATION PHASE ===
+	// Capture filesystem states after rollback for comparison
+	finalFSState := createFSState(t, base, "/")
+	finalBackupFSState := createFSState(t, backup, "/")
 
-	// Create target file in OS filesystem
-	require.NoError(t, os.MkdirAll(filepath.Dir(osTargetFile), 0755))
-	require.NoError(t, os.WriteFile(osTargetFile, []byte(fileContent), 0644))
+	// Verify that rollback completely restored the initial filesystem state
+	mustEqualFSState(t, initialFSState, base, "/")
+	mustEqualFSState(t, initialBackupFSState, backup, "/")
 
-	// Create symlink in OS filesystem
-	require.NoError(t, osFS.Symlink(osTargetFile, osSymlinkPath))
+	// Perform explicit state comparison to ensure perfect restoration
+	require.Equal(t, initialFSState, finalFSState, "Filesystem state before removal and after rollback should be identical")
+	require.Equal(t, initialBackupFSState, finalBackupFSState, "Backup filesystem state before removal and after rollback should be identical")
 
-	// Capture OS filesystem state before removal
-	osStateBefore, err := newFSState(osFS, osTestDir, true)
+	// Verify that all components are restored and functional after rollback
+	mustExist(t, base, dir1)                                        // Directory containing symlinks should be restored
+	symlinkMustExist(t, base, linkToFile)                           // File symlink should be restored
+	symlinkMustExist(t, base, linkToDir)                            // Directory symlink should be restored
+	symlinkMustExistWithTragetPath(t, base, linkToFile, targetFile) // File symlink should point to correct target
+	symlinkMustExistWithTragetPath(t, base, linkToDir, dir3)        // Directory symlink should point to correct target
+	mustExist(t, base, targetFile)                                  // Target file should still exist
+	mustExist(t, base, dir3)                                        // Target directory should still exist
+	fileMustContainText(t, base, targetFile, fileContent)           // Target file content should remain unchanged
+}
+
+// TestBackupFS_RemoveIndividualSymlinks tests the behavior of BackupFS when removing
+// individual symlinks using Remove() (not RemoveAll()).
+//
+// This test verifies several critical aspects of BackupFS individual symlink removal:
+// 1. Individual symlinks are properly backed up when removed using Remove()
+// 2. Target files/directories remain intact when symlinks pointing to them are removed
+// 3. Rollback functionality correctly restores individual symlinks
+// 4. Filesystem state is completely preserved across remove/rollback operations
+//
+// Test Setup:
+// Creates individual symlinks pointing to target resources:
+//   - /dir2/dir3/file.txt - Target file with test content
+//   - /link_to_file -> /dir2/dir3/file.txt (file symlink to be removed)
+//   - /link_to_dir -> /dir2/dir3/ (directory symlink to be removed)
+//
+// Test Flow:
+// 1. Setup: Create target file and individual symlinks
+// 2. Verify: Confirm all symlinks exist and point to correct targets
+// 3. Capture: Record initial filesystem state for both base and backup filesystems
+// 4. Remove: Delete individual symlinks using BackupFS.Remove()
+// 5. Verify: Ensure symlinks are removed but targets remain intact
+// 6. Verify: Confirm symlinks are properly backed up
+// 7. Rollback: Restore filesystem to initial state using BackupFS.Rollback()
+// 8. Verify: Confirm filesystem state matches exactly with initial capture
+// 9. Verify: Ensure all symlinks and targets are restored
+func TestBackupFS_RemoveIndividualSymlinks(t *testing.T) {
+	t.Parallel()
+
+	// Initialize BackupFS test environment with base, backup, and backupFS instances
+	_, base, backup, backupFS := NewTestBackupFS(t)
+
+	var (
+		// Individual symlink structure layout:
+		// /link_to_file -> /dir2/dir3/file.txt (file symlink)
+		// /link_to_dir -> /dir2/dir3 (directory symlink)
+		dir3        = testutils.AbsFilePath(t, "/dir2/dir3")       // Target directory for symlinks
+		targetFile  = filepath.Join(dir3, "file.txt")              // Target file for file symlink
+		linkToFile  = testutils.AbsFilePath(t, "/link_to_file")    // File symlink (to be removed individually)
+		linkToDir   = testutils.AbsFilePath(t, "/link_to_dir")     // Directory symlink (to be removed individually)
+		fileContent = "test content for individual symlink target" // Content for target file
+	)
+
+	// === SETUP PHASE ===
+	// Create the target directory and file in the base filesystem
+	mkdirAll(t, base, dir3, 0755) // Create target directory for symlinks
+
+	// Create the target file that one of the symlinks will point to
+	createFile(t, base, targetFile, fileContent)
+	fileMustContainText(t, base, targetFile, fileContent)
+
+	// Create individual symlinks pointing to targets
+	createSymlink(t, base, targetFile, linkToFile) // File symlink: /link_to_file -> /dir2/dir3/file.txt
+	createSymlink(t, base, dir3, linkToDir)        // Directory symlink: /link_to_dir -> /dir2/dir3
+
+	// === VERIFICATION PHASE ===
+	// Verify that symlinks were created successfully and point to correct targets
+	symlinkMustExist(t, base, linkToFile)
+	symlinkMustExist(t, base, linkToDir)
+	symlinkMustExistWithTragetPath(t, base, linkToFile, targetFile)
+	symlinkMustExistWithTragetPath(t, base, linkToDir, dir3)
+
+	// === STATE CAPTURE PHASE ===
+	// Capture initial filesystem states before any modifications
+	// This serves as the baseline for rollback verification
+	initialFSState := createFSState(t, base, "/")
+	initialBackupFSState := createFSState(t, backup, "/")
+
+	// === REMOVAL PHASE ===
+	// Remove individual symlinks using BackupFS.Remove (not RemoveAll)
+	// This should backup each symlink before removal
+	err := backupFS.Remove(linkToFile)
 	require.NoError(t, err)
 
-	// Remove the symlink using BackupFS.Remove
-	err = backupFS.Remove(symlinkPath)
+	err = backupFS.Remove(linkToDir)
 	require.NoError(t, err)
 
-	// Remove the symlink using os.Remove for comparison
-	osErr := osFS.Remove(osSymlinkPath)
-	require.NoError(t, osErr)
+	// === POST-REMOVAL VERIFICATION PHASE ===
+	// Verify that individual symlinks are completely removed from base filesystem
+	mustNotLExist(t, backupFS, linkToFile) // File symlink should not exist via BackupFS
+	mustNotLExist(t, base, linkToFile)     // File symlink should not exist in base filesystem
+	mustNotLExist(t, backupFS, linkToDir)  // Directory symlink should not exist via BackupFS
+	mustNotLExist(t, base, linkToDir)      // Directory symlink should not exist in base filesystem
 
-	mustNotLExist(t, backupFS, symlinkPath)
-	mustExist(t, base, targetFile)
+	// Verify that symlink targets remain intact (removal of symlinks shouldn't affect targets)
+	mustExist(t, base, targetFile)                        // Target file should still exist
+	mustExist(t, base, dir3)                              // Target directory should still exist
+	fileMustContainText(t, base, targetFile, fileContent) // Target file content should be unchanged
 
-	// Verify that the symlink was backed up
-	mustLExist(t, backup, symlinkPath)
-	symlinkMustExist(t, backup, symlinkPath)
+	// Verify that removed symlinks were properly backed up
+	mustLExist(t, backup, linkToFile)       // File symlink should be backed up
+	mustLExist(t, backup, linkToDir)        // Directory symlink should be backed up
+	symlinkMustExist(t, backup, linkToFile) // Backed up file symlink should be valid
+	symlinkMustExist(t, backup, linkToDir)  // Backed up directory symlink should be valid
 
-	// Capture filesystem states after removal
-	baseStateAfter := createFSState(t, base, "/")
-	osStateAfter, err := newFSState(osFS, osTestDir, true)
-	require.NoError(t, err)
-
-	// Compare behavior: both should have removed only the symlink, not the target
-	// The target file should still exist in both filesystems
-
-	// Count the difference in filesystem states
-	removedItemsBackupFS := len(baseFSState) - len(baseStateAfter)
-	removedItemsOS := len(osStateBefore) - len(osStateAfter)
-
-	// Both should have removed exactly 1 item (the symlink)
-	require.Equal(t, 1, removedItemsBackupFS, "BackupFS should have removed exactly 1 item (the symlink)")
-	require.Equal(t, 1, removedItemsOS, "OS filesystem should have removed exactly 1 item (the symlink)")
-	require.Equal(t, removedItemsOS, removedItemsBackupFS, "BackupFS and OS filesystem should behave identically")
-
-	// Verify that target file still exists and has the same content
-	osTargetContent, err := os.ReadFile(osTargetFile)
-	require.NoError(t, err)
-	require.Equal(t, fileContent, string(osTargetContent), "Target file content should be unchanged in OS filesystem")
-
-	// Test rollback functionality
+	// === ROLLBACK PHASE ===
+	// Test rollback functionality to restore the filesystem to initial state
 	err = backupFS.Rollback()
 	require.NoError(t, err)
 
-	// After rollback, the initial state should be restored
-	mustEqualFSState(t, baseFSState, base, "/")
-	mustEqualFSState(t, backupFSState, backup, "/")
+	// === POST-ROLLBACK VERIFICATION PHASE ===
+	// Capture filesystem states after rollback for comparison
+	finalFSState := createFSState(t, base, "/")
+	finalBackupFSState := createFSState(t, backup, "/")
 
-	// After rollback, the symlink should exist again
-	symlinkMustExist(t, base, symlinkPath)
-	fileMustContainText(t, base, targetFile, fileContent)
+	// Verify that rollback completely restored the initial filesystem state
+	mustEqualFSState(t, initialFSState, base, "/")
+	mustEqualFSState(t, initialBackupFSState, backup, "/")
+
+	// Perform explicit state comparison to ensure perfect restoration
+	require.Equal(t, initialFSState, finalFSState, "Filesystem state before removal and after rollback should be identical")
+	require.Equal(t, initialBackupFSState, finalBackupFSState, "Backup filesystem state before removal and after rollback should be identical")
+
+	// Verify that all components are restored and functional after rollback
+	symlinkMustExist(t, base, linkToFile)                           // File symlink should be restored
+	symlinkMustExist(t, base, linkToDir)                            // Directory symlink should be restored
+	symlinkMustExistWithTragetPath(t, base, linkToFile, targetFile) // File symlink should point to correct target
+	symlinkMustExistWithTragetPath(t, base, linkToDir, dir3)        // Directory symlink should point to correct target
+	mustExist(t, base, targetFile)                                  // Target file should still exist
+	mustExist(t, base, dir3)                                        // Target directory should still exist
+	fileMustContainText(t, base, targetFile, fileContent)           // Target file content should remain unchanged
+}
+
+func TimesStamp() string {
+	return time.Now().Format("2006-01-02_15-04-05.000")
 }
