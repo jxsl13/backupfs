@@ -211,7 +211,7 @@ func (s *PrefixFS) Rename(oldname, newname string) error {
 	// Prevent renaming the root directory of the PrefixFS
 	// This would make the filesystem inconsistent
 	if oldpath == s.prefix {
-		return &fs.PathError{Op: "remove_all", Path: oldname, Err: syscall.EPERM}
+		return &fs.PathError{Op: "rename", Path: oldname, Err: syscall.EPERM}
 	}
 
 	_, newpath, err := s.prefixPath(newname)
