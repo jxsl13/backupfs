@@ -1016,7 +1016,7 @@ func FuncPathTmp(up ...int) string {
 	return PathTmp(testutils.FuncName(caller + 1))
 }
 
-func TestBackupFS_RemoveSymlinkedFile(t *testing.T) {
+func TestBackupFS_RemoveFileSymlink(t *testing.T) {
 	t.Parallel()
 
 	// Setup test filesystems

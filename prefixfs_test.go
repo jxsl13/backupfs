@@ -14,9 +14,6 @@ import (
 // TestPrefixFSRemoveAllSymlinksBehavior tests the behavior of os.RemoveAll and PrefixFS.RemoveAll
 // for symlinks and compares the resulting directory content to ensure they are identical.
 func TestPrefixFS_RemoveAllSymlinksBehavior(t *testing.T) {
-	// Create temporary directories for testing using the standard pattern
-	rootPath := FuncPathTmp()
-
 	t.Parallel()
 
 	testCases := []struct {
@@ -109,6 +106,9 @@ func TestPrefixFS_RemoveAllSymlinksBehavior(t *testing.T) {
 			removeTarget: "testdir",
 		},
 	}
+
+	// Create temporary directories for testing using the standard pattern
+	rootPath := FuncPathTmp()
 
 	for _, tc := range testCases {
 		tc := tc // capture loop variable
