@@ -11,7 +11,7 @@ func TestOSFS_RemoveFileSymlink(t *testing.T) {
 	t.Parallel()
 
 	osfs := NewOSFS()
-	rootPath, err := TempDir(osfs, testutils.FuncName())
+	rootPath, err := TempDir(osfs, FuncPathTmp(), TimesStamp())
 	require.NoError(t, err)
 
 	mkdirAll(t, osfs, rootPath, 0o700)
@@ -37,7 +37,7 @@ func TestOSFS_RemoveASllFileSymlink(t *testing.T) {
 	t.Parallel()
 
 	osfs := NewOSFS()
-	rootPath, err := TempDir(osfs, testutils.FuncName())
+	rootPath, err := TempDir(osfs, FuncPathTmp())
 	require.NoError(t, err)
 
 	mkdirAll(t, osfs, rootPath, 0o700)
@@ -176,7 +176,7 @@ func TestOSFS_RemoveIndividualSymlinks(t *testing.T) {
 	// Initialize OS filesystem and create temporary directory
 
 	osfs := NewOSFS()
-	rootPath, err := TempDir(osfs, PathTmp(testutils.FuncName()), TimesStamp())
+	rootPath, err := TempDir(osfs, FuncPathTmp(), TimesStamp())
 	require.NoError(t, err)
 
 	// Setup the root directory with proper permissions
