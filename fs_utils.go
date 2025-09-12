@@ -419,9 +419,6 @@ func resolvePathWithFound(fsys resolverFS, filePath string) (resolvedFilePath st
 // The returned path is the resolved path.
 // In case that the returned path is not equal to the path that was passed to this function
 // then there was a symlink somewhere along the way to that file or directory.
-// WARNING: The last element of the path is NOT resolved.
-// Returns the file info of the last unresolved element.
-// In case that the file path was not found, the returned FileInfo is nil.
 func resolvePathWithInfo(fsys resolverFS, filePath string) (resolvedFilePath string, fi fs.FileInfo, err error) {
 	defer func() {
 		if err != nil {
