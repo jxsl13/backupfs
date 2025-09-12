@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPrefixFSFileInfoRootName(t *testing.T) {
+func TestPrefixFS_FileInfoRootName(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)

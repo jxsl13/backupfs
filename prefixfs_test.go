@@ -13,9 +13,9 @@ import (
 
 // TestPrefixFSRemoveAllSymlinksBehavior tests the behavior of os.RemoveAll and PrefixFS.RemoveAll
 // for symlinks and compares the resulting directory content to ensure they are identical.
-func TestPrefixFSRemoveAllSymlinksBehavior(t *testing.T) {
+func TestPrefixFS_RemoveAllSymlinksBehavior(t *testing.T) {
 	// Create temporary directories for testing using the standard pattern
-	rootPath := CallerPathTmp()
+	rootPath := FuncPathTmp()
 
 	t.Parallel()
 

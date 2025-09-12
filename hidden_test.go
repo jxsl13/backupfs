@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIsHidden(t *testing.T) {
+func TestHiddenFS_IsHidden(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPrefixFSFileRootDirectoryName(t *testing.T) {
+func TestPrefixFS_FileRootDirectoryName(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)
@@ -37,7 +37,7 @@ func TestPrefixFSFileRootDirectoryName(t *testing.T) {
 	assert.Equal(t, osName, prefixName)
 }
 
-func TestPrefixFSFileRootDirectoryStatName(t *testing.T) {
+func TestPrefixFS_FileRootDirectoryStatName(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)

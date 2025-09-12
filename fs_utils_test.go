@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
+func TestUtils_ResolvePathWithFileThatDoesntExist(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)
@@ -34,7 +34,7 @@ func TestResolvePathWithFileThatDoesntExist(t *testing.T) {
 	require.Equal(t, filepath.FromSlash(originalFilePath), resolvedPath)
 }
 
-func TestResolveCircularSymlinkPath(t *testing.T) {
+func TestUtils_ResolveCircularSymlinkPath(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)
@@ -70,7 +70,7 @@ func TestResolveCircularSymlinkPath(t *testing.T) {
 	require.Equal(t, filepath.FromSlash(filePath), resolvedPath)
 }
 
-func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
+func TestUtils_ResolvePathWithAbsoluteSymlink(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)
@@ -95,7 +95,7 @@ func TestResolvePathWithAbsoluteSymlink(t *testing.T) {
 	require.Equal(t, filepath.FromSlash(originalFilePath), resolvedPath)
 }
 
-func TestResolvePathWithRelativeSymlink(t *testing.T) {
+func TestUtils_ResolvePathWithRelativeSymlink(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)
@@ -121,7 +121,7 @@ func TestResolvePathWithRelativeSymlink(t *testing.T) {
 	require.Equal(t, originalFilePath, resolvedPath)
 }
 
-func TestResolveFilePathWithRelativeSymlink(t *testing.T) {
+func TestUtils_ResolveFilePathWithRelativeSymlink(t *testing.T) {
 	t.Parallel()
 
 	_, base, _, _ := NewTestBackupFS(t)
@@ -163,7 +163,7 @@ func currentVolumeDriverLetter() string {
 	return strings.TrimRight(filepath.VolumeName(pwd), ":")
 }
 
-func TestIterateDirTreeAbsolute(t *testing.T) {
+func TestUtils_IterateDirTreeAbsolute(t *testing.T) {
 	volumePrefix := currentVolumePrefix()
 	filePath := filepath.Join(volumePrefix, "a", "b", "c", "d", "test.txt")
 
@@ -185,7 +185,7 @@ func TestIterateDirTreeAbsolute(t *testing.T) {
 	require.Equal(t, expected, parts)
 }
 
-func TestIterateDirTreeRelative(t *testing.T) {
+func TestUtils_IterateDirTreeRelative(t *testing.T) {
 	t.Parallel()
 
 	filePath := filepath.Join("a", "b", "c", "d", "test.txt")
@@ -207,7 +207,7 @@ func TestIterateDirTreeRelative(t *testing.T) {
 	require.Equal(t, expected, parts)
 }
 
-func TestIterateDirTreeEmpty(t *testing.T) {
+func TestUtils_IterateDirTreeEmpty(t *testing.T) {
 	t.Parallel()
 
 	parts := make([]string, 0, 1)

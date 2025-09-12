@@ -14,7 +14,7 @@ func TestHiddenFS_WindowsAbsolutePaths(t *testing.T) {
 	t.Parallel()
 
 	// Create temporary directory for testing
-	tempDir := CallerPathTmp()
+	tempDir := FuncPathTmp()
 
 	// Create base OSFS
 	osfs := NewOSFS()
@@ -122,7 +122,7 @@ func TestHiddenFS_WindowsSystemPaths(t *testing.T) {
 	t.Parallel()
 
 	// Create a temporary directory
-	tempDir := CallerPathTmp()
+	tempDir := FuncPathTmp()
 
 	// Create base OSFS
 	osfs := NewOSFS()
@@ -174,7 +174,7 @@ func TestHiddenFS_WindowsSymlinkPaths(t *testing.T) {
 	t.Parallel()
 
 	// Create temporary directory
-	tempDir := CallerPathTmp()
+	tempDir := FuncPathTmp()
 
 	// Setup OSFS
 	osfs := NewOSFS()
@@ -265,7 +265,7 @@ func TestHiddenFS_WindowsVolumePathIssue(t *testing.T) {
 	t.Parallel()
 
 	// Create temporary directory
-	tempDir := CallerPathTmp()
+	tempDir := FuncPathTmp()
 
 	// Create base OSFS
 	osfs := NewOSFS()

@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRelCantMakeRelative(t *testing.T) {
+func TestHiddenFS_RelCantMakeRelative(t *testing.T) {
 	t.Parallel()
 
-	rootPath := CallerPathTmp(-1)
+	rootPath := FuncPathTmp()
 	root := NewTempDirPrefixFS(rootPath)
 
 	// "c:\\.......\\backup\\0194f97d-930b-75b5-b09a-db550cd729c1"
@@ -184,7 +184,7 @@ func TestHiddenFS_RemoveAll(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 1)
 }
 
-func TestHiddenFSSymlink(t *testing.T) {
+func TestHiddenFS_Symlink(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -226,12 +226,12 @@ func TestHiddenFSSymlink(t *testing.T) {
 	countFiles(t, fsys, hiddenDirParent, 4)
 }
 
-func NewTestTempDirHiddenFS(t *testing.T, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
-	return newTestTempDirHiddenFS(t, 0, hiddenPaths...)
-}
+func newTestTempDirHiddenFS(t *testing.T, caller int, funcName string, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
 
-func newTestTempDirHiddenFS(t *testing.T, caller int, hiddenPaths ...string) (base FS, hfs *HiddenFS) {
 	rootPath := CallerPathTmp(caller)
+	if funcName != "" {
+		rootPath = PathTmp(funcName)
+	}
 	root := NewTempDirPrefixFS(rootPath)
 	require := require.New(t)
 
@@ -248,12 +248,18 @@ func newTestTempDirHiddenFS(t *testing.T, caller int, hiddenPaths ...string) (ba
 	return base, hfs
 }
 
-func SetupTempDirHiddenFSTest(t *testing.T) (hiddenDirParent, hiddenDir, hiddenFile string, base FS, fs *HiddenFS) {
+func SetupTempDirHiddenFSTest(t *testing.T, funcName ...string) (hiddenDirParent, hiddenDir, hiddenFile string, base FS, fs *HiddenFS) {
+
 	hiddenDirParent = testutils.AbsFilePath(t, "/var/opt")
 	hiddenDir = testutils.AbsFilePath(t, "/var/opt/backups")
 	hiddenFile = "hidden_file.txt"
 
-	base, fs = newTestTempDirHiddenFS(t, 2, hiddenDir)
+	fName := ""
+	if len(funcName) > 0 {
+		fName = funcName[0]
+	}
+
+	base, fs = newTestTempDirHiddenFS(t, 1, fName, hiddenDir)
 
 	mkdir(t, base, hiddenDirParent, 0775)
 	mkdirAll(t, base, hiddenDir, 0775)

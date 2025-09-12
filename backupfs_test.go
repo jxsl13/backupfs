@@ -898,7 +898,7 @@ func NewTestBackupFS(t *testing.T) (root, base, backup FS, backupFS *BackupFS) {
 	return root, base, backup, backupFS
 }
 
-func TestCreateFileInSymlinkDir(t *testing.T) {
+func TestBackupFS_CreateFileInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
 	_, base, backup, backupFS := NewTestBackupFS(t)
@@ -933,7 +933,7 @@ func TestCreateFileInSymlinkDir(t *testing.T) {
 	mustEqualFSState(t, backupFsState, backup, "/")
 }
 
-func TestMkdirInSymlinkDir(t *testing.T) {
+func TestBackupFS_MkdirInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
 	_, base, backup, backupFS := NewTestBackupFS(t)
@@ -964,7 +964,7 @@ func TestMkdirInSymlinkDir(t *testing.T) {
 	mustEqualFSState(t, backupFsState, backup, "/")
 }
 
-func TestRemoveDirInSymlinkDir(t *testing.T) {
+func TestBackupFS_RemoveDirInSymlinkDir(t *testing.T) {
 	t.Parallel()
 
 	_, base, backup, backupFS := NewTestBackupFS(t)
@@ -996,16 +996,119 @@ func TestRemoveDirInSymlinkDir(t *testing.T) {
 	mustEqualFSState(t, backupFsState, backup, "/")
 }
 
+func PathTmp(funcName string) string {
+	name := strings.TrimPrefix(filepath.Ext(funcName), ".")
+	return testutils.FilePath(filepath.Join("tmp", name))
+}
+
 func CallerPathTmp(up ...int) string {
-	caller := 0
+	caller := 1
 	if len(up) > 0 {
 		caller += up[0]
 	}
-	funcName := strings.TrimPrefix(filepath.Ext(testutils.CallerFuncName(caller)), ".")
-	return testutils.FilePath(filepath.Join("tmp", funcName))
+	return PathTmp(testutils.CallerFuncName(caller))
 }
 
-func TestRemoveSymlinkedFile(t *testing.T) {
+func FuncPathTmp(up ...int) string {
+	caller := 1
+	if len(up) > 0 {
+		caller += up[0]
+	}
+	return PathTmp(testutils.FuncName(caller + 1))
+}
+
+func TestBackupFS_RemoveSymlinkedFile(t *testing.T) {
 	t.Parallel()
 
+	// Setup test filesystems
+	_, base, backup, backupFS := NewTestBackupFS(t)
+
+	// Create a target file that the symlink will point to
+	var (
+		targetFile  = "/target/file.txt"
+		symlinkPath = "/symlink_to_file"
+		fileContent = "test content for symlink target"
+	)
+
+	// Create the target file in the base filesystem
+	createFile(t, base, targetFile, fileContent)
+	fileMustContainText(t, base, targetFile, fileContent)
+
+	// Create a symlink pointing to the target file in the base filesystem
+	createSymlink(t, base, targetFile, symlinkPath)
+	symlinkMustExist(t, base, symlinkPath)
+
+	// Capture the initial filesystem states
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+
+	// Setup a comparison OS filesystem for behavior comparison
+	osFS := NewOSFS()
+	testBasePath := FuncPathTmp()
+	osTestDir, err := TempDir(osFS, testBasePath, fmt.Sprintf("TestRemoveSymlinkedFile-%s-", time.Now().Format("2006-01-02_15-04-05.000")))
+	require.NoError(t, err)
+
+	// Create the same file structure in the OS filesystem for comparison
+	osTargetFile := filepath.Join(osTestDir, "target", "file.txt")
+	osSymlinkPath := filepath.Join(osTestDir, "symlink_to_file")
+
+	// Create target file in OS filesystem
+	require.NoError(t, os.MkdirAll(filepath.Dir(osTargetFile), 0755))
+	require.NoError(t, os.WriteFile(osTargetFile, []byte(fileContent), 0644))
+
+	// Create symlink in OS filesystem
+	require.NoError(t, osFS.Symlink(osTargetFile, osSymlinkPath))
+
+	// Capture OS filesystem state before removal
+	osStateBefore, err := newFSState(osFS, osTestDir, true)
+	require.NoError(t, err)
+
+	// Remove the symlink using BackupFS.Remove
+	err = backupFS.Remove(symlinkPath)
+	require.NoError(t, err)
+
+	// Remove the symlink using os.Remove for comparison
+	osErr := osFS.Remove(osSymlinkPath)
+	require.NoError(t, osErr)
+
+	mustNotLExist(t, backupFS, symlinkPath)
+	mustExist(t, base, targetFile)
+
+	// Verify that the symlink was backed up
+	mustLExist(t, backup, symlinkPath)
+	symlinkMustExist(t, backup, symlinkPath)
+
+	// Capture filesystem states after removal
+	baseStateAfter := createFSState(t, base, "/")
+	osStateAfter, err := newFSState(osFS, osTestDir, true)
+	require.NoError(t, err)
+
+	// Compare behavior: both should have removed only the symlink, not the target
+	// The target file should still exist in both filesystems
+
+	// Count the difference in filesystem states
+	removedItemsBackupFS := len(baseFSState) - len(baseStateAfter)
+	removedItemsOS := len(osStateBefore) - len(osStateAfter)
+
+	// Both should have removed exactly 1 item (the symlink)
+	require.Equal(t, 1, removedItemsBackupFS, "BackupFS should have removed exactly 1 item (the symlink)")
+	require.Equal(t, 1, removedItemsOS, "OS filesystem should have removed exactly 1 item (the symlink)")
+	require.Equal(t, removedItemsOS, removedItemsBackupFS, "BackupFS and OS filesystem should behave identically")
+
+	// Verify that target file still exists and has the same content
+	osTargetContent, err := os.ReadFile(osTargetFile)
+	require.NoError(t, err)
+	require.Equal(t, fileContent, string(osTargetContent), "Target file content should be unchanged in OS filesystem")
+
+	// Test rollback functionality
+	err = backupFS.Rollback()
+	require.NoError(t, err)
+
+	// After rollback, the initial state should be restored
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
+
+	// After rollback, the symlink should exist again
+	symlinkMustExist(t, base, symlinkPath)
+	fileMustContainText(t, base, targetFile, fileContent)
 }

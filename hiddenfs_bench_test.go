@@ -5,7 +5,7 @@ import (
 )
 
 // BenchmarkIsInHiddenPath benchmarks the optimized isInHiddenPath function
-func BenchmarkIsInHiddenPath(b *testing.B) {
+func BenchmarkHiddenFS_IsInHiddenPath(b *testing.B) {
 	// Use absolute paths to test the optimization where filepath.IsAbs returns true
 	hiddenDir := "C:\\var\\opt\\backups"
 	testPath := "C:\\var\\opt\\backups\\test.txt"
@@ -20,7 +20,7 @@ func BenchmarkIsInHiddenPath(b *testing.B) {
 }
 
 // BenchmarkIsInHiddenPathRelative benchmarks with relative paths (less optimized case)
-func BenchmarkIsInHiddenPathRelative(b *testing.B) {
+func BenchmarkHiddenFS_IsInHiddenPathRelative(b *testing.B) {
 	hiddenDir := "/var/opt/backups"
 	testPath := "/var/opt/backups/test.txt"
 
@@ -34,7 +34,7 @@ func BenchmarkIsInHiddenPathRelative(b *testing.B) {
 }
 
 // BenchmarkDirContains benchmarks the optimized dirContains function
-func BenchmarkDirContains(b *testing.B) {
+func BenchmarkHiddenFS_DirContains(b *testing.B) {
 	parent := "C:\\var\\opt"
 	subdir := "C:\\var\\opt\\backups"
 
