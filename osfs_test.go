@@ -1,9 +1,9 @@
 package backupfs
 
 import (
+	"path/filepath"
 	"testing"
 
-	"github.com/jxsl13/backupfs/internal/testutils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,10 +16,10 @@ func TestOSFS_RemoveFileSymlink(t *testing.T) {
 
 	mkdirAll(t, osfs, rootPath, 0o700)
 
-	const (
-		dir     = "/dir"
-		file    = "/dir/file.txt"
-		symlink = "/link_to_file"
+	var (
+		dir     = filepath.Join(rootPath, "/dir")
+		file    = filepath.Join(rootPath, "/dir/file.txt")
+		symlink = filepath.Join(rootPath, "/link_to_file")
 	)
 
 	mkdir(t, osfs, dir, 0o700)
@@ -37,15 +37,15 @@ func TestOSFS_RemoveASllFileSymlink(t *testing.T) {
 	t.Parallel()
 
 	osfs := NewOSFS()
-	rootPath, err := TempDir(osfs, FuncPathTmp())
+	rootPath, err := TempDir(osfs, FuncPathTmp(), TimesStamp())
 	require.NoError(t, err)
 
 	mkdirAll(t, osfs, rootPath, 0o700)
 
-	const (
-		dir     = "/dir"
-		file    = "/dir/file.txt"
-		symlink = "/link_to_file"
+	var (
+		dir     = filepath.Join(rootPath, "/dir")
+		file    = filepath.Join(rootPath, "/dir/file.txt")
+		symlink = filepath.Join(rootPath, "/link_to_file")
 	)
 
 	mkdir(t, osfs, dir, 0o700)
@@ -87,7 +87,7 @@ func TestOSFS_RemoveDirectoryWithSymlinks(t *testing.T) {
 
 	// Initialize OS filesystem and create temporary directory
 	osfs := NewOSFS()
-	rootPath, err := TempDir(osfs, testutils.FuncName())
+	rootPath, err := TempDir(osfs, FuncPathTmp(), TimesStamp())
 	require.NoError(t, err)
 
 	// Setup the root directory with proper permissions
@@ -97,13 +97,13 @@ func TestOSFS_RemoveDirectoryWithSymlinks(t *testing.T) {
 	// Directory structure layout:
 	// /dir1/link_to_file -> /dir2/dir3/file.txt (file symlink)
 	// /dir1/link_to_dir -> /dir2/dir3 (directory symlink)
-	const (
-		dir1        = "/dir1"                           // Directory containing symlinks (to be removed)
-		dir3        = "/dir2/dir3"                      // Target directory for symlinks
-		targetFile  = "/dir2/dir3/file.txt"             // Target file for file symlink
-		linkToFile  = "/dir1/link_to_file"              // Symlink pointing to targetFile
-		linkToDir   = "/dir1/link_to_dir"               // Symlink pointing to dir3
-		fileContent = "test content for symlink target" // Content for target file
+	var (
+		dir1        = filepath.Join(rootPath, "/dir1")               // Directory containing symlinks (to be removed)
+		dir3        = filepath.Join(rootPath, "/dir2/dir3")          // Target directory for symlinks
+		targetFile  = filepath.Join(rootPath, "/dir2/dir3/file.txt") // Target file for file symlink
+		linkToFile  = filepath.Join(rootPath, "/dir1/link_to_file")  // Symlink pointing to targetFile
+		linkToDir   = filepath.Join(rootPath, "/dir1/link_to_dir")   // Symlink pointing to dir3
+		fileContent = "test content for symlink target"              // Content for target file
 	)
 
 	// === SETUP PHASE ===
@@ -146,7 +146,7 @@ func TestOSFS_RemoveDirectoryWithSymlinks(t *testing.T) {
 	fileMustContainText(t, osfs, targetFile, fileContent) // Target file content should be unchanged
 
 	// Additional verification: Ensure target directory structure is intact
-	mustExist(t, osfs, "/dir2") // Parent directory of target should still exist
+	mustExist(t, osfs, filepath.Join(rootPath, "/dir2")) // Parent directory of target should still exist
 }
 
 // TestOSFS_RemoveIndividualSymlinks tests the behavior of the OS filesystem
@@ -183,12 +183,12 @@ func TestOSFS_RemoveIndividualSymlinks(t *testing.T) {
 	mkdirAll(t, osfs, rootPath, 0o700)
 
 	// Define paths for individual symlink removal test
-	const (
-		dir3        = "/dir2/dir3"                                 // Target directory
-		targetFile  = "/dir2/dir3/file.txt"                        // Target file
-		linkToFile  = "/link_to_file"                              // File symlink (to be removed individually)
-		linkToDir   = "/link_to_dir"                               // Directory symlink (to be removed individually)
-		fileContent = "test content for individual symlink target" // Content for target file
+	var (
+		dir3        = filepath.Join(rootPath, "/dir2/dir3")          // Target directory
+		targetFile  = filepath.Join(rootPath, "/dir2/dir3/file.txt") // Target file
+		linkToFile  = filepath.Join(rootPath, "/link_to_file")       // File symlink (to be removed individually)
+		linkToDir   = filepath.Join(rootPath, "/link_to_dir")        // Directory symlink (to be removed individually)
+		fileContent = "test content for individual symlink target"   // Content for target file
 	)
 
 	// === SETUP PHASE ===
@@ -229,5 +229,5 @@ func TestOSFS_RemoveIndividualSymlinks(t *testing.T) {
 	fileMustContainText(t, osfs, targetFile, fileContent) // Target file content should be unchanged
 
 	// Additional verification: Ensure target directory structure is intact
-	mustExist(t, osfs, "/dir2") // Parent directory of target should still exist
+	mustExist(t, osfs, filepath.Join(rootPath, "/dir2")) // Parent directory of target should still exist
 }
