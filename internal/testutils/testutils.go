@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 func FilePath(relative string, up ...int) string {
@@ -22,7 +23,7 @@ func FilePath(relative string, up ...int) string {
 	return abs
 }
 
-func FuncName(up ...int) string {
+func FuncSignature(up ...int) string {
 	offset := 1
 	if len(up) > 0 && up[0] > 0 {
 		offset = +up[0]
@@ -37,6 +38,23 @@ func FuncName(up ...int) string {
 		panic("failed to get function name")
 	}
 	return f.Name()
+}
+
+func FuncName(up ...int) string {
+	offset := 1
+	if len(up) > 0 && up[0] > 0 {
+		offset = +up[0]
+	}
+	pc, _, _, ok := runtime.Caller(offset)
+	if !ok {
+		panic("failed to get caller")
+	}
+
+	f := runtime.FuncForPC(pc)
+	if f == nil {
+		panic("failed to get function name")
+	}
+	return strings.TrimPrefix(filepath.Ext(f.Name()), ".")
 }
 
 func FileLine(up ...int) string {
@@ -71,7 +89,7 @@ func CallerFuncName(up ...int) string {
 	if f == nil {
 		panic("failed to get function name")
 	}
-	return f.Name()
+	return strings.TrimPrefix(filepath.Ext(f.Name()), ".")
 }
 
 func CallerFileLine(up ...int) string {

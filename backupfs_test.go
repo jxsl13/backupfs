@@ -997,8 +997,7 @@ func TestBackupFS_RemoveDirInSymlinkDir(t *testing.T) {
 }
 
 func PathTmp(funcName string) string {
-	name := strings.TrimPrefix(filepath.Ext(funcName), ".")
-	return testutils.FilePath(filepath.Join("tmp", name))
+	return testutils.FilePath(filepath.Join("tmp", funcName))
 }
 
 func CallerPathTmp(up ...int) string {
@@ -1025,7 +1024,7 @@ func TestBackupFS_RemoveSymlinkedFile(t *testing.T) {
 
 	// Create a target file that the symlink will point to
 	var (
-		targetFile  = "/target/file.txt"
+		targetFile  = "/dir/file.txt"
 		symlinkPath = "/symlink_to_file"
 		fileContent = "test content for symlink target"
 	)
@@ -1045,7 +1044,7 @@ func TestBackupFS_RemoveSymlinkedFile(t *testing.T) {
 	// Setup a comparison OS filesystem for behavior comparison
 	osFS := NewOSFS()
 	testBasePath := FuncPathTmp()
-	osTestDir, err := TempDir(osFS, testBasePath, fmt.Sprintf("TestRemoveSymlinkedFile-%s-", time.Now().Format("2006-01-02_15-04-05.000")))
+	osTestDir, err := TempDir(osFS, testBasePath, fmt.Sprintf("%s-%s-", testutils.FuncName(), time.Now().Format("2006-01-02_15-04-05.000")))
 	require.NoError(t, err)
 
 	// Create the same file structure in the OS filesystem for comparison
