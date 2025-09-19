@@ -411,3 +411,17 @@ func reconstructVolume(absOldPath, prefix string) string {
 		return filepath.Clean(parts[0] + ":" + separator + parts[1])
 	}
 }
+
+// PrefixPath joins two paths together, making sure the resulting path is absolute
+// and normalized (volume names are converted to root relative paths).
+// On Windows the volume name is preserved, but the colon is removed.
+func PrefixPath(prefix, name string) (string, error) {
+	name = filepath.FromSlash(name)
+	absolute, err := filepath.Abs(filepath.FromSlash(name))
+	if err != nil {
+		return "", fmt.Errorf("failed to make path absolute %s: %w", name, err)
+	}
+	absolute = normalizeVolumePath(absolute)
+	absolute = filepath.Join(prefix, absolute)
+	return absolute, nil
+}
