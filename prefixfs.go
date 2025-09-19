@@ -65,7 +65,7 @@ func normalizeVolumePath(p string) string {
 		// prefix path with volume letter but without the :
 		volumeName := strings.TrimRight(volume, ":")
 		nameWithoutVolume := p[len(volume):]
-		return filepath.Join(separator+volumeName, nameWithoutVolume)
+		return filepath.Join(separator+strings.ToUpper(volumeName), nameWithoutVolume)
 	}
 	return p
 }
