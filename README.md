@@ -15,8 +15,8 @@ The pattern consists of a simple interface.
 
 ```go
 type Command interface {
-	Do() error
-	Undo() error
+    Do() error
+    Undo() error
 }
 ```
 
@@ -51,12 +51,6 @@ are to be strictly separated from **side effects causing commands**
 
 then you will have a much easier time!
 
-## VolumeFS
-
-`VolumeFS` is a filesystem abstraction layer that hides Windows volumes from file system operations.
-It allows to define a volume of operation like `c:` or `C:` which is then the only volume that can be accessed.
-This abstraction layer allows to operate on filesystems with operating system independent paths.
-
 ## PrefixFS
 
 `PrefixFS` forces a filesystem to have a specific prefix.
@@ -78,10 +72,9 @@ HiddenFS has a single purpose, that is to hide your backup location and prevent 
 In case you use BackupFS to backup files that are overwritten on your operating system filesystem (OsFS), you want to define multiple filesystem layers that work together to prevent you from creating a non-terminating recursion of file backups.
 
 - The zero'th layer is the underlying real filesystem, be it the OsFS, MemMapFS, etc.
-- The first layer is a VolumeFS filesystem abstraction that removes the need to provide a volume prefix for absolute file paths when accessing files on the underlying filesystem (Windows)
-- The second layer is a PrefixFS that is provided a prefix path (backup directory location) and the above instantiated filesystem (e.g. OsFS)
-- The third layer is HiddenFS which takes the backup location as path that needs hiding and wraps the first layer in itself.
-- The fourth layer is the BackupFS layer which takes the third layer as underlying filesystem to operate on (backup location is not accessible nor viewable) and the second PrefixFS layer to backup your files to.
+- The first layer is a PrefixFS that is provided a prefix path (backup directory location) and the above instantiated filesystem (e.g. OsFS)
+- The second layer is HiddenFS which takes the backup location as path that needs hiding and wraps the first layer in itself.
+- The third layer is the BackupFS layer which takes the third layer as underlying filesystem to operate on (backup location is not accessible nor viewable) and the second PrefixFS layer to backup your files to.
 
 At the end you will create something along the lines of:
 
@@ -89,32 +82,30 @@ At the end you will create something along the lines of:
 package main
 
 import (
-	"os"
-	"path/filepath"
+    "os"
+    "path/filepath"
 
-	"github.com/jxsl13/backupfs"
+    "github.com/jxsl13/backupfs"
 )
 
 func main() {
 
-	var (
-		// first layer: abstracts away the volume prefix (on Unix the it is an empty string)
-		volume     = filepath.VolumeName(os.Args[0]) // determined from application path
-		base       = backupfs.NewVolumeFS(volume, backupfs.NewOSFS())
-		backupPath = "/var/opt/app/backups"
+    var (
+        base       = backupfs.NewOSFS()
+        backupPath = "/var/opt/app/backups" // C:\\...\\app\backups
 
-		// second layer: abstracts away a path prefix
-		backup = backupfs.NewPrefixFS(base, backupPath)
+        // first layer: abstracts away a path prefix
+        backup = backupfs.NewPrefixFS(base, backupPath)
 
-		// third layer: hides the backup location in order to prevent recursion
-		masked = backupfs.NewHiddenFS(base, backupPath)
+        // second layer: hides the backup location in order to prevent recursion
+        hidden = backupfs.NewHiddenFS(base, backupPath)
 
-		// fourth layer: backup on write filesystem with rollback
-		backupFS = backupfs.NewBackupFS(masked, backup)
-	)
-	// you may use backupFS at this point like the os package
-	// except for the backupFS.Rollback() machanism which
-	// allows you to rollback filesystem modifications.
+        // third layer: backup on write filesystem with rollback
+        backupFS = backupfs.NewBackupFS(hidden, backup)
+    )
+    // you may use backupFS at this point like the os package
+    // except for the backupFS.Rollback() machanism which
+    // allows you to rollback filesystem modifications.
 }
 ```
 
@@ -129,88 +120,84 @@ Then we do wrap the base filesystem and the backup filesystem in the `BackupFS` 
 package main
 
 import (
-	"fmt"
-	"io"
-	"os"
+    "fmt"
+    "io"
+    "os"
 
-	"github.com/jxsl13/backupfs"
+    "github.com/jxsl13/backupfs"
 )
 
 func checkErr(err error) {
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+    if err != nil {
+        fmt.Println(err)
+        os.Exit(1)
+    }
 }
 
 func main() {
 
-	var (
-		// base filesystem
-		baseFS   = backupfs.NewPrefixFS(backupfs.NewOSFS(), os.TempDir())
-		filePath = "/var/opt/test.txt"
-	)
-	// create an already existing file in base filesystem
-	f, err := baseFS.Create(filePath)
-	checkErr(err)
+    var (
+        // base filesystem
+        baseFS   = backupfs.NewPrefixFS(backupfs.NewOSFS(), os.TempDir())
+        filePath = "/var/opt/test.txt"
+    )
+    // create an already existing file in base filesystem
+    f, err := baseFS.Create(filePath)
+    checkErr(err)
 
-	f.WriteString("original text")
-	f.Close()
+    f.WriteString("original text")
+    f.Close()
 
-	// at this point we have the base filesystem ready to be overwritten with new files
-	var (
-		// sub directory in base filesystem as backup directory
-		// where the backups should be stored
-		backup = backupfs.NewPrefixFS(baseFS, "/var/opt/application/backup")
+    // at this point we have the base filesystem ready to be overwritten with new files
+    var (
+        // sub directory in base filesystem as backup directory
+        // where the backups should be stored
+        backup = backupfs.NewPrefixFS(baseFS, "/var/opt/application/backup")
 
-		// backup on write filesystem
-		backupFS = backupfs.NewBackupFS(baseFS, backup)
-	)
+        // backup on write filesystem
+        backupFS = backupfs.NewBackupFS(baseFS, backup)
+    )
 
-	// we try to override a file in the base filesystem
-	// but in this case we use the backup on write filesystem
-	// on top of the base filesystem.
-	f, err = backupFS.Create(filePath)
-	checkErr(err)
-	f.WriteString("new file content")
-	f.Close()
+    // we try to override a file in the base filesystem
+    // but in this case we use the backup on write filesystem
+    // on top of the base filesystem.
+    f, err = backupFS.Create(filePath)
+    checkErr(err)
+    f.WriteString("new file content")
+    f.Close()
 
-	// before we overwrite the file a backup was created
-	// at the same path as the overwritten file was found at.
-	// due to our backup being on a prefixedfilesystem, we can find
-	// the backedup file at a prefixed location
+    // before we overwrite the file a backup was created
+    // at the same path as the overwritten file was found at.
+    // due to our backup being on a prefixedfilesystem, we can find
+    // the backedup file at a prefixed location
 
-	f, err = backup.Open(filePath)
-	checkErr(err)
+    f, err = backup.Open(filePath)
+    checkErr(err)
 
-	b, err := io.ReadAll(f)
-	checkErr(err)
-	_ = f.Close()
+    b, err := io.ReadAll(f)
+    checkErr(err)
+    _ = f.Close()
 
-	backedupContent := string(b)
+    backedupContent := string(b)
 
-	f, err = baseFS.Open(filePath)
-	checkErr(err)
-	b, err = io.ReadAll(f)
-	checkErr(err)
+    f, err = baseFS.Open(filePath)
+    checkErr(err)
+    b, err = io.ReadAll(f)
+    checkErr(err)
 
-	overwrittenFileContent := string(b)
+    overwrittenFileContent := string(b)
 
-	fmt.Println("Overwritten file: ", overwrittenFileContent)
-	fmt.Println("Backed up file  : ", backedupContent)
+    fmt.Println("Overwritten file: ", overwrittenFileContent)
+    fmt.Println("Backed up file  : ", backedupContent)
 
-	dir, err := backupFS.Open("/var/opt/")
-	checkErr(err)
-	defer dir.Close()
+    dir, err := backupFS.Open("/var/opt/")
+    checkErr(err)
+    defer dir.Close()
 
-	fis, err := dir.Readdir(-1)
-	checkErr(err)
-	for _, fi := range fis {
-		fmt.Println("Found name: ", fi.Name())
-	}
+    fis, err := dir.Readdir(-1)
+    checkErr(err)
+    for _, fi := range fis {
+        fmt.Println("Found name: ", fi.Name())
+    }
 }
 ```
-
-## TODO
-
-- Add symlink fuzz tests on os filesystem that deletes the symlink after each test.
