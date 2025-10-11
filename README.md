@@ -74,7 +74,7 @@ In case you use BackupFS to backup files that are overwritten on your operating 
 - The zero'th layer is the underlying real filesystem, be it the OsFS, MemMapFS, etc.
 - The first layer is a PrefixFS that is provided a prefix path (backup directory location) and the above instantiated filesystem (e.g. OsFS)
 - The second layer is HiddenFS which takes the backup location as path that needs hiding and wraps the first layer in itself.
-- The third layer is the BackupFS layer which takes the third layer as underlying filesystem to operate on (backup location is not accessible nor viewable) and the second PrefixFS layer to backup your files to.
+- The third layer is the BackupFS layer which takes the second layer as underlying filesystem to operate on (backup location is not accessible nor viewable) and the first PrefixFS layer to backup your files to.
 
 At the end you will create something along the lines of:
 
@@ -104,7 +104,7 @@ func main() {
         backupFS = backupfs.NewBackupFS(hidden, backup)
     )
     // you may use backupFS at this point like the os package
-    // except for the backupFS.Rollback() machanism which
+    // except for the backupFS.Rollback() mechanism which
     // allows you to rollback filesystem modifications.
 }
 ```
