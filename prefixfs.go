@@ -406,7 +406,10 @@ func (s *PrefixFS) Readlink(name string) (_ string, err error) {
 	}
 	cleanedOldname := filepath.Clean(filepath.FromSlash(oldname))
 
-	if isAbs(cleanedOldname) {
+	if s.opts.EnableSymlinkEscape {
+		// in this case we return just what we got from the symlink
+		return cleanedOldname, nil
+	} else if isAbs(cleanedOldname) {
 		return reconstructVolume(cleanedOldname, s.prefix), nil
 	}
 
