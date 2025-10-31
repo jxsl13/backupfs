@@ -15,20 +15,37 @@ var (
 	_ FS = (*PrefixFS)(nil)
 )
 
+type prefixFSOptions struct {
+	// EnableSymlinkEscape makes symlinks point outside of the filesystem abstraction folder
+	EnableSymlinkEscape bool
+}
+
+type PrefixFSOption func(*prefixFSOptions) error
+
+// PrefixFSWithAllowSymlinkEscape sets whether symlinks are allowed to point outside of the PrefixFS.
+// When this option is enabled, all absolute symlink paths will point directly into the root filesystem.
+func PrefixFSWithEnableSymlinkEscape(enable bool) PrefixFSOption {
+	return func(o *prefixFSOptions) error {
+		o.EnableSymlinkEscape = enable
+		return nil
+	}
+}
+
 // NewPrefixFS creates a new file system abstraction that forces any path to be prepended with
 // the provided prefix.
 // the existence of the prefixPath existing is hidden away (errors might show full paths).
 // The prefixPath is seen as the root directory.
 // The prefix path MUST NOT contain a Windows (OS) volume prefix like C:, D:, etc.
 // Wrap the base filesystem in a VolumeFS if you want to target a specific volume.
-func NewPrefixFS(fsys FS, prefixPath string) (_ *PrefixFS, err error) {
+func NewPrefixFS(fsys FS, prefixPath string, opts ...PrefixFSOption) (_ *PrefixFS, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("failed to create PrefixFS: %w", err)
 		}
 	}()
-
 	prefixPath = filepath.FromSlash(prefixPath)
+
+	options := prefixFSOptions{}
 
 	// unwrap other PrefixFS - required in order to properly support Windows
 	// nested drive letters
@@ -36,6 +53,16 @@ func NewPrefixFS(fsys FS, prefixPath string) (_ *PrefixFS, err error) {
 		fsys = pfs.base
 		prefixPath = normalizeVolumePath(prefixPath)
 		prefixPath = filepath.Join(pfs.prefix, prefixPath)
+
+		// inherit options from unwrapped PrefixFS
+		options = pfs.opts
+	}
+
+	for _, o := range opts {
+		err = o(&options)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	absPrefixPath, err := filepath.Abs(prefixPath)
@@ -46,6 +73,7 @@ func NewPrefixFS(fsys FS, prefixPath string) (_ *PrefixFS, err error) {
 	return &PrefixFS{
 		prefix: absPrefixPath,
 		base:   fsys,
+		opts:   options,
 	}, nil
 }
 
@@ -54,6 +82,7 @@ func NewPrefixFS(fsys FS, prefixPath string) (_ *PrefixFS, err error) {
 type PrefixFS struct {
 	prefix string
 	base   FS
+	opts   prefixFSOptions
 }
 
 // c:\\test -> \\c\\test
@@ -318,7 +347,15 @@ func (s *PrefixFS) Symlink(oldname, newname string) (err error) {
 		return err
 	}
 
-	if isAbs(oldname) {
+	if s.opts.EnableSymlinkEscape {
+		// make symlinks point outside of the prefix fs
+		// just create the symlink as is but inside the prefixed fs
+		err = s.base.Symlink(oldname, newPathPrefixed)
+		if err != nil {
+			return err
+		}
+		return nil
+	} else if isAbs(oldname) {
 		_, oldPathPrefixed, err := s.prefixPath(oldname)
 		if err != nil {
 			return err
