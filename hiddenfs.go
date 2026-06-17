@@ -505,7 +505,9 @@ func dirContains(parent, subdir string) (bool, error) {
 
 		relPath, err = filepath.Rel(absParent, absSubdir)
 		if err != nil {
-			return false, err
+			// Rel fails between paths on different windows volumes (e.g. C: and
+			// D:). A subdir on another volume cannot be contained in parent.
+			return false, nil
 		}
 	}
 	relPath = filepath.FromSlash(relPath)
@@ -548,7 +550,9 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 
 		relPath, err = filepath.Rel(absHiddenDir, absName)
 		if err != nil {
-			return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
+			// Rel fails between paths on different windows volumes (e.g. C: and
+			// D:). A path on another volume cannot lie inside the hidden dir.
+			return "", false, nil
 		}
 	}
 

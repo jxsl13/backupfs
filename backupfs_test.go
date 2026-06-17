@@ -996,20 +996,14 @@ func TestBackupFS_RemoveDirInSymlinkDir(t *testing.T) {
 }
 
 func PathTmp(funcName string) string {
-	// On macOS the project dir lives under ~/Desktop, which is indexed by
-	// Spotlight and backed up by Time Machine; writing hundreds of thousands of
-	// scratch dirs there triggers an mds/fseventsd indexing storm that can freeze
-	// the host. Use the OS temp dir ($TMPDIR -> /var/folders) there: not indexed,
-	// purged automatically, and on the same APFS volume as the repo.
-	//
-	// On Windows/Linux keep the project-local ./tmp: there is no Spotlight issue,
-	// and the OS temp dir on the Windows CI runner sits on a DIFFERENT volume (C:)
-	// than the checkout (D:), which makes filepath.Rel cross-volume and breaks the
-	// HiddenFS containment checks.
-	if runtime.GOOS == "darwin" {
-		return filepath.Join(os.TempDir(), "backupfs-test", funcName)
-	}
-	return testutils.FilePath(filepath.Join("tmp", funcName))
+	// Use the OS temp dir, never a project-local ./tmp. On macOS the project dir
+	// lives under ~/Desktop, which is indexed by Spotlight and backed up by Time
+	// Machine; writing hundreds of thousands of scratch dirs there triggers an
+	// mds/fseventsd indexing storm that can freeze the host. The OS temp dir is
+	// not indexed and is purged automatically. Cross-volume temp paths (e.g. the
+	// Windows CI runner's C: temp vs a D: checkout) are handled by the HiddenFS
+	// containment checks treating other-volume paths as not-contained.
+	return filepath.Join(os.TempDir(), "backupfs-test", funcName)
 }
 
 func CallerPathTmp(up ...int) string {
