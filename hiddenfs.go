@@ -5,10 +5,26 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 )
+
+// foldPath lowercases a path on filesystems that are case-insensitive by
+// default (Windows, macOS) so that hidden-path containment checks cannot be
+// bypassed with a differently-cased path. On case-sensitive systems (Linux)
+// the path is returned unchanged. Folding can only widen what is treated as
+// hidden, which is the safe failure direction for backup-location protection.
+// (§B B4)
+func foldPath(p string) string {
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		return strings.ToLower(p)
+	default:
+		return p
+	}
+}
 
 var (
 	// assert interfaces implemented
@@ -458,6 +474,10 @@ func isParentOfHiddenDir(name string, hiddenPaths []string) (bool, error) {
 const relParent = ".." + string(os.PathSeparator)
 
 func dirContains(parent, subdir string) (bool, error) {
+	// fold case on case-insensitive filesystems so containment cannot be
+	// bypassed with a differently-cased path. (§B B4)
+	parent = foldPath(parent)
+	subdir = foldPath(subdir)
 
 	// Try filepath.Rel with the normalized paths first
 	relPath, err := filepath.Rel(parent, subdir)
@@ -485,7 +505,9 @@ func dirContains(parent, subdir string) (bool, error) {
 
 		relPath, err = filepath.Rel(absParent, absSubdir)
 		if err != nil {
-			return false, err
+			// Rel fails between paths on different windows volumes (e.g. C: and
+			// D:). A subdir on another volume cannot be contained in parent.
+			return false, nil
 		}
 	}
 	relPath = filepath.FromSlash(relPath)
@@ -497,6 +519,10 @@ func dirContains(parent, subdir string) (bool, error) {
 }
 
 func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, err error) {
+	// fold case on case-insensitive filesystems so the hidden path cannot be
+	// bypassed with a differently-cased path. (§B B4)
+	name = foldPath(name)
+	hiddenDir = foldPath(hiddenDir)
 
 	// Try filepath.Rel with the normalized paths first
 	relPath, err = filepath.Rel(hiddenDir, name)
@@ -524,7 +550,9 @@ func isInHiddenPath(name, hiddenDir string) (relPath string, inHiddenPath bool, 
 
 		relPath, err = filepath.Rel(absHiddenDir, absName)
 		if err != nil {
-			return "", false, &os.PathError{Op: "is_hidden", Path: name, Err: err}
+			// Rel fails between paths on different windows volumes (e.g. C: and
+			// D:). A path on another volume cannot lie inside the hidden dir.
+			return "", false, nil
 		}
 	}
 

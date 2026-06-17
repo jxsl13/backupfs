@@ -540,7 +540,7 @@ func TestBackupFS_JSON(t *testing.T) {
 	data, err := json.Marshal(backupFS)
 	require.NoError(err)
 
-	var backupFSNew *BackupFS = NewBackupFS(base, backup)
+	backupFSNew := NewBackupFS(base, backup)
 	err = json.Unmarshal(data, &backupFSNew)
 	require.NoError(err)
 
@@ -996,7 +996,14 @@ func TestBackupFS_RemoveDirInSymlinkDir(t *testing.T) {
 }
 
 func PathTmp(funcName string) string {
-	return testutils.FilePath(filepath.Join("tmp", funcName))
+	// Use the OS temp dir, never a project-local ./tmp. On macOS the project dir
+	// lives under ~/Desktop, which is indexed by Spotlight and backed up by Time
+	// Machine; writing hundreds of thousands of scratch dirs there triggers an
+	// mds/fseventsd indexing storm that can freeze the host. The OS temp dir is
+	// not indexed and is purged automatically. Cross-volume temp paths (e.g. the
+	// Windows CI runner's C: temp vs a D: checkout) are handled by the HiddenFS
+	// containment checks treating other-volume paths as not-contained.
+	return filepath.Join(os.TempDir(), "backupfs-test", funcName)
 }
 
 func CallerPathTmp(up ...int) string {

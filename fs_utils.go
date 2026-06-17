@@ -30,9 +30,9 @@ var (
 func IterateDirTree(name string, visitor func(string) (proceed bool, err error)) (aborted bool, err error) {
 
 	var (
-		create      = false
+		create      bool
 		lastIndex   = 0
-		proceed     = true
+		proceed     bool
 		volumeIndex = len(filepath.VolumeName(name)) + 1 // works for root dir / and volume c:\
 	)
 	for i, r := range name {
@@ -288,7 +288,7 @@ func restoreFile(name string, backupFi fs.FileInfo, base, backup FS) (err error)
 		// best effort, if backup was tempered with, we cannot restore the file.
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fi, err := f.Stat()
 	if err != nil {

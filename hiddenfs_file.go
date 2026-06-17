@@ -117,7 +117,8 @@ func (hf *hiddenFile) Readdirnames(count int) ([]string, error) {
 		}
 
 		for _, name := range names {
-			hidden, err := isHidden(name, hf.hiddenPaths)
+			fullPath := filepath.Join(hf.filePath, name)
+			hidden, err := isHidden(fullPath, hf.hiddenPaths)
 			if err != nil {
 				return nil, err
 			}

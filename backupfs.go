@@ -556,7 +556,7 @@ func (fsys *BackupFS) Chown(name string, uid, gid int) (err error) {
 func (fsys *BackupFS) Chtimes(name string, atime, mtime time.Time) (err error) {
 	defer func() {
 		if err != nil {
-			err = &os.PathError{Op: "chown", Path: name, Err: err}
+			err = &os.PathError{Op: "chtimes", Path: name, Err: err}
 		}
 	}()
 	fsys.mu.Lock()
@@ -622,7 +622,11 @@ func (fsys *BackupFS) Lchown(name string, uid, gid int) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	// Lchown operates on the symlink itself, so the final path component must
+	// NOT be resolved through the symlink. realParentPath resolves only the
+	// parent directories and keeps the final component intact, ensuring the
+	// backup and the lchown target are the same link. (§B B1)
+	resolvedName, err := fsys.realParentPath(name)
 	if err != nil {
 		return err
 	}
@@ -634,7 +638,7 @@ func (fsys *BackupFS) Lchown(name string, uid, gid int) (err error) {
 		return err
 	}
 
-	return fsys.base.Lchown(name, uid, gid)
+	return fsys.base.Lchown(resolvedName, uid, gid)
 }
 
 // Rollback tries to rollback the backup back to the
@@ -1043,7 +1047,7 @@ func (fsys *BackupFS) tryBackup(resolvedName string) (err error) {
 		if err != nil {
 			return err
 		}
-		defer sf.Close()
+		defer func() { _ = sf.Close() }()
 		err = copyFile(fsys.backup, resolvedName, info, sf)
 		if err != nil {
 			return err
