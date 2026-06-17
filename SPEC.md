@@ -1,6 +1,6 @@
 # SPEC — backupfs
 
-Caveman spec. Distilled from code @ master `1286343`. `?` = unconfirmed, user verify.
+Caveman spec. Distilled from code @ `1286343`; updated on branch `coverage-bugfixes-cicd` (B1–B5 fixes, CI, coverage). `?` = unconfirmed, user verify.
 
 ## §G — goal
 
@@ -39,7 +39,7 @@ Go lib. Stacked filesystem layers give backup-on-write + rollback. App modify fi
 - V5 BackupFS: Rollback restores order = remove-base → restore dirs → files → symlinks; backup deletion order = symlink → file → dir (dir last so empty). (backupfs.go:711-754)
 - V6 BackupFS: Rollback resets baseInfos to empty after run. (backupfs.go:764) Repeated Rollback = no-op.
 - V7 BackupFS: Rollback failure wraps `ErrRollbackFailed` via errors.Join; continues best-effort, reports all errs. (backupfs.go:650)
-- V8 HiddenFS: hidden paths invisible + unmodifiable from base; ops on hidden path error, listings exclude them. Prevents backup recursion. Confirmed by FuzzHiddenFSCreate, FuzzHiddenFSRemoveAll.
+- V8 HiddenFS: hidden paths invisible + unmodifiable from base; ops on hidden path error, listings exclude them. Prevents backup recursion. Confirmed by `FuzzHiddenFS_Create`, `FuzzHiddenFS_RemoveAll`.
 - V9 Cross-OS Chown/Chtimes: errors that are "not implemented on this OS" ignorable (windows `EWINDOWS`); uid/gid = -1 on windows. (fs_utils_windows.go)
 - V10 Sort: ByMost = descending path-separator count, ByLeast = ascending. Drives nesting order in rollback. (sort.go) Confirmed by FuzzSort*.
 - V11 ? Symlink escape: default EnableSymlinkEscape=false → abs symlink targets rewritten to stay inside prefix; relative links resolved + kept relative; escape attempt errors. (prefixfs.go:338) `?` confirm exact policy.
@@ -54,7 +54,7 @@ Go lib. Stacked filesystem layers give backup-on-write + rollback. App modify fi
 ## §T — tasks
 
 id|status|task|cites
-T1|~|raise coverage to ≥80% total (64.7%→79.5% single-OS; ≥80% enforced on MERGED multi-OS via codecov.yml — Windows-only volume branches uncovered on darwin/linux)|V1-V17
+T1|~|raise coverage to ≥80% total (64.7%→79.5% single-OS; ≥80% enforced on MERGED multi-OS via codecov.yml — Windows-only volume branches uncovered on darwin/linux)|V1-V18
 T2|x|test BackupFS Chown/Chtimes/Lchown|V9,V14,V15,I.backup
 T3|x|test BackupFS New/NewWithFS/BaseFS/BackupFS/SetMap/Map/JSON|V13,I.backup
 T4|x|test hiddenfs_file.go Readdir/Readdirnames/Sync/Truncate/ReadAt/Seek/WriteAt|I.File,V8,V16
@@ -63,7 +63,7 @@ T6|x|test backupfs_ready_only.go Stat/Readlink|I.backup
 T7|x|test fs_utils restore/copy paths via nested RemoveAll + modtime rollback|V5,V9
 T8|x|test prefixfs symlink escape policy both option values|V11,V12
 T9|~|Rollback repeated no-op done (V6); explicit ErrRollbackFailed injection still TODO|V6,V7
-T10|x|fix bugs found → B1,B2,B3,B4 fixed + recorded; V14-V17 added|§B
+T10|x|fix bugs found → B1,B2,B3,B4,B5 fixed + recorded; V14-V18 added|§B
 T11|x|CI: golangci-lint + gofmt job (.golangci.yml)|C1
 T12|x|CI: build matrix GOOS=linux,darwin,windows × amd64,arm64|C2
 T13|x|CI: gate coverage ≥80% on merged report (codecov.yml project status)|T1
@@ -71,6 +71,7 @@ T14|x|CI: scheduled+dispatch fuzz run, all 5 targets × 3 OS (fuzz.yaml)|V1,V8,V
 T15|x|CI: release pipeline — tag push → cross-OS verify + gh release notes (release.yaml)|C1,C2
 T16|x|CI: 3-OS × stable/oldstable test matrix kept; -race + per-flag codecov upload|C2
 T17|~|Windows symlink: relies on GH windows-latest runner (symlinks enabled); existing+new symlink tests run there. Explicit Developer-Mode skip NOT added|C4,V11
+T18|x|cross-volume HiddenFS containment (other-volume path ⇒ not-contained); covered by `TestHiddenFS_RelCantMakeRelative` on windows CI (C: temp vs D: checkout)|V18
 
 ## §B — bugs
 
