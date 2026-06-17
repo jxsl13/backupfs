@@ -540,7 +540,7 @@ func TestBackupFS_JSON(t *testing.T) {
 	data, err := json.Marshal(backupFS)
 	require.NoError(err)
 
-	var backupFSNew *BackupFS = NewBackupFS(base, backup)
+	backupFSNew := NewBackupFS(base, backup)
 	err = json.Unmarshal(data, &backupFSNew)
 	require.NoError(err)
 
