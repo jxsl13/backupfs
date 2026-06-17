@@ -1,0 +1,26 @@
+# Codecov merges coverage uploaded from every OS/Go-version matrix leg (see the
+# `flags` in .github/workflows/test.yaml). Platform-split files (*_unix.go,
+# *_windows.go) and the volume helpers only execute on their target OS, so the
+# 80% target is enforced on the MERGED report, not on any single OS run.
+coverage:
+  precision: 1
+  round: down
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 1%
+        if_ci_failed: error
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "main/**"
+  - "internal/testutils/**"

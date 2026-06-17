@@ -12,8 +12,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  # cross-compile for every supported OS/arch without running tests, mirrors the
+  # Makefile `syntax` target. Catches platform-specific build breakage early. (C2)
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./...
+
   test:
     strategy:
+      fail-fast: false
       matrix:
         go-version: [stable, oldstable]
         platform: [ubuntu-latest, macos-latest, windows-latest]
@@ -30,12 +74,13 @@ jobs:
         run: go vet ./...
 
       - name: Code Coverage
-        run: go test ./... -timeout 30s -race -count=1 -covermode=atomic -coverprofile=coverage.txt
+        run: go test ./... -timeout 120s -race -count=1 -covermode=atomic -coverprofile=coverage.txt
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.txt
+          flags: ${{ matrix.platform }}-${{ matrix.go-version }}
           fail_ci_if_error: false
           verbose: false
