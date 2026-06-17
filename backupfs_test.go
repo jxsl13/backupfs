@@ -996,7 +996,12 @@ func TestBackupFS_RemoveDirInSymlinkDir(t *testing.T) {
 }
 
 func PathTmp(funcName string) string {
-	return testutils.FilePath(filepath.Join("tmp", funcName))
+	// Use the OS temp dir ($TMPDIR -> /var/folders on macOS), NOT a project-local
+	// ./tmp. The project dir lives under ~/Desktop and is indexed by Spotlight and
+	// backed up by Time Machine; writing hundreds of thousands of scratch dirs
+	// there triggers an mds/fseventsd indexing storm that can freeze the host.
+	// The OS temp dir is not indexed and is purged automatically.
+	return filepath.Join(os.TempDir(), "backupfs-test", funcName)
 }
 
 func CallerPathTmp(up ...int) string {
