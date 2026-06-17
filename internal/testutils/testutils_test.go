@@ -1,6 +1,7 @@
 package testutils
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -48,8 +49,12 @@ func TestFilePath(t *testing.T) {
 	p := FilePath("testutils_test.go")
 	require.True(t, strings.HasSuffix(p, "testutils_test.go"))
 
+	// build a path that is absolute on the current OS (drive-qualified on windows)
+	absPath, err := filepath.Abs("absolute")
+	require.NoError(t, err)
+	require.True(t, filepath.IsAbs(absPath))
 	require.Panics(t, func() {
-		FilePath("/absolute/path")
+		FilePath(absPath)
 	})
 }
 

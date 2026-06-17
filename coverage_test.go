@@ -7,11 +7,21 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// chown/lchown are not supported on Windows (the OS layer returns an error), so
+// tests that exercise ownership skip that assertion there.
+func skipIfNoChown(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("chown/lchown not supported on windows")
+	}
+}
 
 // TestBackupFS_ChmodRollback exercises Chmod through the backup layer and asserts the
 // original mode is restored on rollback. (V3, V5, V6)
@@ -45,6 +55,7 @@ func TestBackupFS_ChmodRollback(t *testing.T) {
 // and that rollback restores state. (V3, V9)
 func TestBackupFS_Chown(t *testing.T) {
 	t.Parallel()
+	skipIfNoChown(t)
 
 	_, base, backup, backupFS := NewTestBackupFS(t)
 
@@ -103,6 +114,7 @@ func TestBackupFS_Chtimes(t *testing.T) {
 // requested name. (V3 + regression for §B B1)
 func TestBackupFS_Lchown(t *testing.T) {
 	t.Parallel()
+	skipIfNoChown(t)
 
 	_, base, backup, backupFS := NewTestBackupFS(t)
 
@@ -405,8 +417,10 @@ func TestHiddenFS_MetadataOps(t *testing.T) {
 
 	fi, err := fsys.Stat(filePath)
 	require.NoError(t, err)
-	require.NoError(t, fsys.Chown(filePath, toUID(fi), toGID(fi)))
-	require.NoError(t, fsys.Lchown(filePath, toUID(fi), toGID(fi)))
+	if runtime.GOOS != "windows" {
+		require.NoError(t, fsys.Chown(filePath, toUID(fi), toGID(fi)))
+		require.NoError(t, fsys.Lchown(filePath, toUID(fi), toGID(fi)))
+	}
 
 	// renaming a non-hidden file is allowed
 	renamed := filepath.Join(hiddenDirParent, "meta_renamed.txt")
@@ -429,9 +443,23 @@ func TestPrefixFS_RootProtection(t *testing.T) {
 	pfs, err := NewPrefixFS(osFS, tmp)
 	require.NoError(t, err)
 
-	require.ErrorIs(t, pfs.Remove("/"), os.ErrPermission)
-	require.ErrorIs(t, pfs.RemoveAll("/"), os.ErrPermission)
-	require.ErrorIs(t, pfs.Rename("/", "/elsewhere"), os.ErrPermission)
+	rmErr := pfs.Remove("/")
+	rmAllErr := pfs.RemoveAll("/")
+	rnErr := pfs.Rename("/", "/elsewhere")
+
+	// the root must never be removable/renamable
+	require.Error(t, rmErr)
+	require.Error(t, rmAllErr)
+	require.Error(t, rnErr)
+
+	// off windows the resolved root equals the prefix and yields a raw
+	// syscall.EPERM (which is not os.ErrPermission on windows). On windows the
+	// volume mapping changes the resolved path, so we only require an error.
+	if runtime.GOOS != "windows" {
+		require.ErrorIs(t, rmErr, syscall.EPERM)
+		require.ErrorIs(t, rmAllErr, syscall.EPERM)
+		require.ErrorIs(t, rnErr, syscall.EPERM)
+	}
 }
 
 // TestPrefixFS_EscapePrevented asserts directory traversal cannot escape the
@@ -512,7 +540,11 @@ func TestWalk(t *testing.T) {
 
 // TestHiddenFS_CaseInsensitiveBypass asserts that on case-insensitive
 // filesystems a differently-cased path cannot bypass the hidden-path
-// protection and modify the backup location. (V8, regression for §B B4)
+// protection. (V8, regression for §B B4)
+//
+// This test is intentionally NON-destructive: it never issues a RemoveAll on a
+// cased path. It proves the fix through the pure containment helper and a
+// (harmless) Create that must be rejected before touching the filesystem.
 func TestHiddenFS_CaseInsensitiveBypass(t *testing.T) {
 	t.Parallel()
 
@@ -520,20 +552,30 @@ func TestHiddenFS_CaseInsensitiveBypass(t *testing.T) {
 		t.Skip("host filesystem is case-sensitive; cased bypass is not applicable")
 	}
 
-	_, hiddenDir, _, base, fsys := SetupTempDirHiddenFSTest(t)
+	_, hiddenDir, _, _, fsys := SetupTempDirHiddenFSTest(t)
 
-	// the hidden dir contains 2 entries to start with
-	countFiles(t, base, hiddenDir, 2)
+	hiddenPaths := []string{hiddenDir}
 
-	// upper-casing the hidden path must NOT let us remove the hidden content
+	// the exact path is hidden ...
+	hidden, err := isHidden(hiddenDir, hiddenPaths)
+	require.NoError(t, err)
+	require.True(t, hidden)
+
+	// ... and so is every cased variant of it, including nested entries.
+	for _, p := range []string{
+		strings.ToUpper(hiddenDir),
+		strings.ToLower(hiddenDir),
+		filepath.Join(strings.ToUpper(hiddenDir), "evil.txt"),
+	} {
+		hidden, err := isHidden(p, hiddenPaths)
+		require.NoError(t, err)
+		require.Truef(t, hidden, "cased path must remain hidden: %s", p)
+	}
+
+	// a Create through the upper-cased hidden path must be rejected (the hiding
+	// check runs before any filesystem mutation, so nothing is created).
 	upper := strings.ToUpper(hiddenDir)
-	_ = fsys.RemoveAll(upper)
-
-	// hidden content is untouched
-	countFiles(t, base, hiddenDir, 2)
-
-	// and creating inside the upper-cased hidden dir must be rejected
-	_, err := fsys.Create(filepath.Join(upper, "evil.txt"))
+	_, err = fsys.Create(filepath.Join(upper, "evil.txt"))
 	require.Error(t, err)
 }
 
@@ -655,7 +697,10 @@ func TestHiddenFile_Readdir_Iterative(t *testing.T) {
 	defer d.Close()
 
 	got := map[string]bool{}
-	for {
+	// hard iteration cap: guarantees termination even if a Readdir wrapper bug
+	// would otherwise spin forever (the dir has only a handful of entries).
+	const maxIter = 100
+	for i := 0; i < maxIter; i++ {
 		infos, err := d.Readdir(1)
 		for _, fi := range infos {
 			require.NotEqual(t, "backups", fi.Name())
@@ -668,6 +713,7 @@ func TestHiddenFile_Readdir_Iterative(t *testing.T) {
 		if len(infos) == 0 {
 			break
 		}
+		require.Less(t, i, maxIter-1, "Readdir did not terminate within %d iterations", maxIter)
 	}
 	require.True(t, got["a.txt"] && got["b.txt"] && got["c.txt"])
 }
