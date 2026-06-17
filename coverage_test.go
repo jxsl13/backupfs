@@ -437,29 +437,25 @@ func TestHiddenFS_MetadataOps(t *testing.T) {
 func TestPrefixFS_RootProtection(t *testing.T) {
 	t.Parallel()
 
+	// On windows "/" does not resolve to the prefix root (the volume mapping
+	// turns it into <prefix>\<volume>), so the root-protection guard does not
+	// apply and "/" simply addresses a non-existent in-prefix path. This test
+	// asserts the unix semantics where "/" IS the prefix root.
+	if runtime.GOOS == "windows" {
+		t.Skip("\"/\" does not address the prefix root on windows")
+	}
+
 	osFS := NewOSFS()
 	tmp, err := TempDir(osFS, t.TempDir())
 	require.NoError(t, err)
 	pfs, err := NewPrefixFS(osFS, tmp)
 	require.NoError(t, err)
 
-	rmErr := pfs.Remove("/")
-	rmAllErr := pfs.RemoveAll("/")
-	rnErr := pfs.Rename("/", "/elsewhere")
-
-	// the root must never be removable/renamable
-	require.Error(t, rmErr)
-	require.Error(t, rmAllErr)
-	require.Error(t, rnErr)
-
-	// off windows the resolved root equals the prefix and yields a raw
-	// syscall.EPERM (which is not os.ErrPermission on windows). On windows the
-	// volume mapping changes the resolved path, so we only require an error.
-	if runtime.GOOS != "windows" {
-		require.ErrorIs(t, rmErr, syscall.EPERM)
-		require.ErrorIs(t, rmAllErr, syscall.EPERM)
-		require.ErrorIs(t, rnErr, syscall.EPERM)
-	}
+	// the root must never be removable/renamable; PrefixFS returns a raw
+	// syscall.EPERM for the prefix root.
+	require.ErrorIs(t, pfs.Remove("/"), syscall.EPERM)
+	require.ErrorIs(t, pfs.RemoveAll("/"), syscall.EPERM)
+	require.ErrorIs(t, pfs.Rename("/", "/elsewhere"), syscall.EPERM)
 }
 
 // TestPrefixFS_EscapePrevented asserts directory traversal cannot escape the
