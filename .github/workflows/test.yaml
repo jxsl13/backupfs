@@ -31,7 +31,7 @@ jobs:
           fi
       - name: golangci-lint
         # v7+ is required for the golangci-lint v2 config schema (.golangci.yml)
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
 
