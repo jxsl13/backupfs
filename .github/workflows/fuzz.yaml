@@ -41,7 +41,7 @@ jobs:
           go test -run '^$' -fuzz='^${{ matrix.target }}$' -race -fuzztime="${{ github.event.inputs.fuzztime || '60s' }}" .
       - name: Upload crashers
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-crashers-${{ matrix.target }}-${{ matrix.platform }}
           path: testdata/fuzz/
