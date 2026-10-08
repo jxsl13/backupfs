@@ -69,6 +69,95 @@ func TestBackupFS_Create(t *testing.T) {
 	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
+func TestBackupFS_CreateAvoidsDuplicateLstat(t *testing.T) {
+	t.Parallel()
+
+	for _, existingFile := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing file", false: "missing file"}[existingFile], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			filePath := testutils.AbsFilePath(t, "/test/create/file")
+			mkdirAll(t, base, filepath.Dir(filePath), 0755)
+			if existingFile {
+				createFile(t, base, filePath, "original contents")
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			for _, contents := range []string{"first write", "second write"} {
+				counting.calls[filePath] = 0
+				createFile(t, backupFS, filePath, contents)
+				require.Equal(t, 1, counting.calls[filePath], "reuse file metadata from path resolution")
+				fileMustContainText(t, base, filePath, contents)
+				if existingFile {
+					fileMustContainText(t, backup, filePath, "original contents")
+				} else {
+					mustNotExist(t, backup, filePath)
+				}
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
+func TestBackupFS_RejectsEmptyPath(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		call func(*BackupFS) error
+	}{
+		{name: "Create", call: func(backupFS *BackupFS) error {
+			file, err := backupFS.Create("")
+			if err == nil {
+				return file.Close()
+			}
+			return err
+		}},
+		{name: "Rename source", call: func(backupFS *BackupFS) error {
+			return backupFS.Rename("", "target")
+		}},
+		{name: "Rename target", call: func(backupFS *BackupFS) error {
+			return backupFS.Rename(testutils.AbsFilePath(t, "/"), "")
+		}},
+		{name: "realPath", call: func(backupFS *BackupFS) error {
+			_, err := backupFS.realPath("")
+			return err
+		}},
+		{name: "realPathWithFound", call: func(backupFS *BackupFS) error {
+			_, _, err := backupFS.realPathWithFound("")
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, _, backupFS := NewTestBackupFS(t)
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+			err := test.call(backupFS)
+			require.ErrorContains(t, err, "empty file path")
+			if test.name != "Rename target" {
+				require.Empty(t, counting.calls)
+			}
+		})
+	}
+}
+
+func TestBackupFS_CreateNormalizesUncleanPath(t *testing.T) {
+	t.Parallel()
+	_, base, _, backupFS := NewTestBackupFS(t)
+	dir := testutils.AbsFilePath(t, "/test/create")
+	mkdirAll(t, base, dir, 0755)
+	unclean := dir + separator + "unused" + separator + ".." + separator + "." + separator + "file"
+	file, err := backupFS.Create(unclean)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+	fileMustContainText(t, base, filepath.Join(dir, "file"), "")
+}
+
 func TestBackupFS_Name(t *testing.T) {
 	t.Parallel()
 
@@ -121,6 +210,79 @@ func TestBackupFS_OpenFile(t *testing.T) {
 	// compare initial state to state after rollback
 	mustEqualFSState(t, baseFSState, base, "/")
 	mustEqualFSState(t, backupFSState, backup, "/")
+}
+
+func TestBackupFS_OpenFileAvoidsDuplicateLstat(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		flags    int
+		existing bool
+	}{
+		{name: "truncate existing", flags: os.O_WRONLY | os.O_TRUNC, existing: true},
+		{name: "create missing", flags: os.O_RDWR | os.O_CREATE | os.O_TRUNC},
+		{name: "append existing", flags: os.O_WRONLY | os.O_APPEND, existing: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			filePath := testutils.AbsFilePath(t, "/test/open/file")
+			mkdirAll(t, base, filepath.Dir(filePath), 0755)
+			expected := ""
+			if test.existing {
+				expected = "original contents"
+				createFile(t, base, filePath, expected)
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			for _, contents := range []string{"first write", "second write"} {
+				counting.calls[filePath] = 0
+				file, err := backupFS.OpenFile(filePath, test.flags, 0600)
+				require.NoError(t, err)
+				written, err := file.WriteString(contents)
+				require.NoError(t, err)
+				require.Equal(t, len(contents), written)
+				require.NoError(t, file.Close())
+				require.Equal(t, 1, counting.calls[filePath], "reuse file metadata from path resolution")
+				if test.flags&os.O_APPEND != 0 {
+					expected += contents
+				} else {
+					expected = contents
+				}
+				fileMustContainText(t, base, filePath, expected)
+				if test.existing {
+					fileMustContainText(t, backup, filePath, "original contents")
+				} else {
+					mustNotExist(t, backup, filePath)
+				}
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
+func TestBackupFS_OpenFileReadOnlyBypassesSnapshots(t *testing.T) {
+	t.Parallel()
+	_, base, backup, backupFS := NewTestBackupFS(t)
+	filePath := testutils.AbsFilePath(t, "/test/open/file")
+	createFile(t, base, filePath, "original contents")
+	counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+	backupFS.base = counting
+	file, err := backupFS.OpenFile(filePath, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	contents, err := io.ReadAll(file)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+	require.Equal(t, "original contents", string(contents))
+	require.Empty(t, counting.calls)
+	require.Empty(t, backupFS.Map())
+	mustNotExist(t, backup, filePath)
 }
 
 func TestBackupFS_Remove(t *testing.T) {
@@ -227,6 +389,126 @@ func TestBackupFS_RemoveAll(t *testing.T) {
 	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
+func TestBackupFS_RemoveAllReusesObservedMetadata(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		kind     string
+		maxLstat int
+	}{
+		{name: "regular file", kind: "file", maxLstat: 1},
+		{name: "empty directory", kind: "directory", maxLstat: 2},
+		{name: "nested tree", kind: "tree", maxLstat: 2},
+		{name: "missing path", kind: "missing", maxLstat: 1},
+		{name: "final symlink", kind: "symlink", maxLstat: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.kind == "symlink" && runtime.GOOS == "windows" {
+				t.Skip("creating symlinks requires privileges on Windows")
+			}
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			parent := testutils.AbsFilePath(t, "/test/removeall")
+			mkdirAll(t, base, parent, 0755)
+			target := filepath.Join(parent, "target")
+			untouched := filepath.Join(parent, "untouched")
+			createFile(t, base, untouched, "untouched contents")
+			var files []string
+			switch test.kind {
+			case "file":
+				createFile(t, base, target, "original contents")
+			case "directory":
+				mkdirAll(t, base, target, 0700)
+			case "tree":
+				files = []string{filepath.Join(target, "first"), filepath.Join(target, "nested", "second")}
+				for _, filePath := range files {
+					createFile(t, base, filePath, "original contents")
+				}
+			case "symlink":
+				require.NoError(t, base.Symlink("untouched", target))
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			require.NoError(t, backupFS.RemoveAll(target))
+			mustNotExist(t, base, target)
+			fileMustContainText(t, base, untouched, "untouched contents")
+			require.Zero(t, counting.calls[untouched], "do not resolve or inspect a final symlink's target")
+			require.LessOrEqual(t, counting.calls[target], test.maxLstat, "reuse metadata already observed by RemoveAll")
+			for _, filePath := range files {
+				require.Equal(t, 1, counting.calls[filePath], "reuse file metadata from traversal")
+			}
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
+type removeAllFailureFS struct {
+	FS
+	statPath   string
+	removePath string
+}
+
+func (fsys removeAllFailureFS) Lstat(name string) (fs.FileInfo, error) {
+	if name == fsys.statPath {
+		return nil, os.ErrPermission
+	}
+	return fsys.FS.Lstat(name)
+}
+
+func (fsys removeAllFailureFS) Remove(name string) error {
+	if name == fsys.removePath {
+		return os.ErrPermission
+	}
+	return fsys.FS.Remove(name)
+}
+
+func TestBackupFS_RemoveAllPreservesErrorsAndRollback(t *testing.T) {
+	t.Parallel()
+
+	for _, stage := range []string{"initial lookup", "traversal", "removal"} {
+		t.Run(stage, func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			target := testutils.AbsFilePath(t, "/test/removeall/target")
+			first, second := filepath.Join(target, "first"), filepath.Join(target, "second")
+			createFile(t, base, first, "first contents")
+			createFile(t, base, second, "second contents")
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			failures := removeAllFailureFS{FS: backupFS.base}
+			switch stage {
+			case "initial lookup":
+				failures.statPath = target
+			case "traversal":
+				failures.statPath = second
+			case "removal":
+				failures.removePath = second
+			}
+			backupFS.base = failures
+			err := backupFS.RemoveAll(target)
+			require.ErrorIs(t, err, os.ErrPermission)
+			var pathError *os.PathError
+			require.ErrorAs(t, err, &pathError)
+			require.Equal(t, "remove_all", pathError.Op)
+			require.Equal(t, target, pathError.Path)
+			if stage == "initial lookup" {
+				mustEqualFSState(t, baseFSState, base, "/")
+			} else {
+				mustNotExist(t, base, first)
+				fileMustContainText(t, base, second, "second contents")
+			}
+			backupFS.base = failures.FS
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
 func TestBackupFS_Rename(t *testing.T) {
 	t.Parallel()
 
@@ -278,6 +560,83 @@ func TestBackupFS_Rename(t *testing.T) {
 	// compare initial state to state after rollback
 	mustEqualFSState(t, baseFSState, base, "/")
 	mustEqualFSState(t, backupFSState, backup, "/")
+}
+
+func TestBackupFS_RenameOverwriteRollback(t *testing.T) {
+	t.Parallel()
+
+	for _, existingSource := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing source", false: "temporary source"}[existingSource], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			source := testutils.AbsFilePath(t, "/test/rename/source")
+			target := testutils.AbsFilePath(t, "/test/rename/target")
+			createFile(t, base, target, "original target")
+			if existingSource {
+				createFile(t, base, source, "original source")
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+
+			for index, content := range []string{"first replacement", "second replacement"} {
+				if existingSource && index == 0 {
+					content = "original source"
+				} else {
+					createFile(t, backupFS, source, content)
+				}
+				require.NoError(t, backupFS.Rename(source, target))
+				mustNotExist(t, base, source)
+				fileMustContainText(t, base, target, content)
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
+func TestBackupFS_RenameAvoidsDuplicateLstat(t *testing.T) {
+	t.Parallel()
+
+	for _, existingTarget := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing target", false: "missing target"}[existingTarget], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			source := testutils.AbsFilePath(t, "/test/rename/source")
+			target := testutils.AbsFilePath(t, "/test/rename/target")
+			createFile(t, base, source, "source contents")
+			if existingTarget {
+				createFile(t, base, target, "target contents")
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			require.NoError(t, backupFS.Rename(source, target))
+			require.Equal(t, 1, counting.calls[source], "reuse source metadata from path resolution")
+			require.Equal(t, 1, counting.calls[target], "reuse destination metadata from path resolution")
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
+func TestBackupFS_BackupRequiredResolvesKnownSymlinkInfo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires privileges on Windows")
+	}
+	_, base, _, backupFS := NewTestBackupFS(t)
+	target := testutils.AbsFilePath(t, "/test/target")
+	link := testutils.AbsFilePath(t, "/test/link")
+	createFile(t, base, target, "target contents")
+	createSymlink(t, base, target, link)
+	linkInfo, err := base.Lstat(link)
+	require.NoError(t, err)
+	info, required, err := backupFS.backupRequired(target, linkInfo)
+	require.NoError(t, err)
+	require.True(t, required)
+	require.True(t, info.Mode().IsRegular(), "snapshot metadata must describe the resolved file, not its symlink")
 }
 
 func TestBackupFS_Rollback(t *testing.T) {
@@ -472,6 +831,76 @@ func TestBackupFS_RollbackWithForcedBackup(t *testing.T) {
 	// this means the the folder and its contents do not exist anymore
 	mustNotExist(t, base, fileDir)
 	mustNotExist(t, backupFS, fileDir)
+}
+
+func TestBackupFS_ForceBackupReusesResolvedMetadata(t *testing.T) {
+	t.Parallel()
+
+	for _, existingFile := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing file", false: "newly created file"}[existingFile], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			filePath := testutils.AbsFilePath(t, "/test/force/file")
+			mkdirAll(t, base, filepath.Dir(filePath), 0755)
+			previousSnapshot := ""
+			if existingFile {
+				previousSnapshot = "original contents"
+				createFile(t, base, filePath, previousSnapshot)
+			}
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+			acceptedTime := time.Unix(1_600_000_000, 0)
+
+			for _, contents := range []string{"first accepted state", "second accepted state"} {
+				createFile(t, backupFS, filePath, contents)
+				require.NoError(t, base.Chmod(filePath, 0640))
+				require.NoError(t, base.Chtimes(filePath, acceptedTime, acceptedTime))
+				if previousSnapshot == "" {
+					mustNotExist(t, backup, filePath)
+				} else {
+					fileMustContainText(t, backup, filePath, previousSnapshot)
+				}
+				counting.calls[filePath] = 0
+				require.NoError(t, backupFS.ForceBackup(filePath))
+				require.Equal(t, 1, counting.calls[filePath], "reuse live metadata after removing the old backup")
+				fileMustContainText(t, backup, filePath, contents)
+				info, err := backup.Lstat(filePath)
+				require.NoError(t, err)
+				modeMustBeEqual(t, 0640, info.Mode())
+				require.True(t, acceptedTime.Equal(info.ModTime()), "refresh snapshot metadata as well as contents")
+				previousSnapshot = contents
+			}
+
+			acceptedFSState := createFSState(t, base, "/")
+			createFile(t, backupFS, filePath, "later changes")
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, acceptedFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+			info, err := base.Lstat(filePath)
+			require.NoError(t, err)
+			require.True(t, acceptedTime.Equal(info.ModTime()), "rollback must restore the refreshed modification time")
+		})
+	}
+}
+
+func TestBackupFS_ForceBackupDeletedFileReusesResolvedMetadata(t *testing.T) {
+	t.Parallel()
+	_, base, backup, backupFS := NewTestBackupFS(t)
+	filePath := testutils.AbsFilePath(t, "/test/force/file")
+	createFile(t, base, filePath, "original contents")
+	backupFSState := createFSState(t, backup, "/")
+	counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+	backupFS.base = counting
+	removeFile(t, backupFS, filePath)
+	fileMustContainText(t, backup, filePath, "original contents")
+	deletedFSState := createFSState(t, base, "/")
+	counting.calls[filePath] = 0
+	require.NoError(t, backupFS.ForceBackup(filePath))
+	require.Equal(t, 1, counting.calls[filePath], "reuse the resolved absence of the live file")
+	mustNotExist(t, backup, filePath)
+	require.NoError(t, backupFS.Rollback())
+	mustEqualFSState(t, deletedFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
 func TestBackupFS_JSON(t *testing.T) {
@@ -684,6 +1113,68 @@ func TestBackupFS_Symlink(t *testing.T) {
 
 }
 
+func TestBackupFS_SymlinkReusesResolvedMetadata(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires privileges on Windows")
+	}
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		existingFile  bool
+		existingLink  bool
+		missingSource bool
+	}{
+		{name: "new relative link"},
+		{name: "dangling relative link", missingSource: true},
+		{name: "existing file destination", existingFile: true},
+		{name: "existing link destination", existingLink: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			parent := testutils.AbsFilePath(t, "/test/symlink")
+			mkdirAll(t, base, parent, 0755)
+			source, destination := filepath.Join(parent, "source"), filepath.Join(parent, "link")
+			if !test.missingSource {
+				createFile(t, base, source, "source contents")
+			}
+			if test.existingFile {
+				createFile(t, base, destination, "original destination")
+			} else if test.existingLink {
+				require.NoError(t, base.Symlink("source", destination))
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			err := backupFS.Symlink("source", destination)
+			if test.existingFile || test.existingLink {
+				require.ErrorIs(t, err, os.ErrExist)
+				mustEqualFSState(t, baseFSState, base, "/")
+			} else {
+				require.NoError(t, err)
+				linked, err := base.Readlink(destination)
+				require.NoError(t, err)
+				require.Equal(t, "source", linked, "preserve the caller's relative link target")
+			}
+			require.Equal(t, 1, counting.calls[destination], "reuse destination metadata from path resolution")
+			if test.existingLink {
+				require.Equal(t, 1, counting.calls[source], "read fresh metadata for the resolved target, not the link")
+				info, err := backup.Lstat(source)
+				require.NoError(t, err)
+				require.True(t, info.Mode().IsRegular())
+				fileMustContainText(t, backup, source, "source contents")
+			} else {
+				require.Zero(t, counting.calls[source], "do not resolve the caller's link target during creation")
+			}
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
 func TestBackupFS_Mkdir(t *testing.T) {
 	t.Parallel()
 
@@ -731,6 +1222,59 @@ func TestBackupFS_Mkdir(t *testing.T) {
 	mustEqualFSState(t, backupFSState, backup, "/")
 }
 
+func TestBackupFS_MkdirReusesResolvedMetadata(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		existingDir   bool
+		existingFile  bool
+		missingParent bool
+		wantErr       error
+		maxLstat      int
+	}{
+		{name: "new directory", maxLstat: 1},
+		{name: "existing directory", existingDir: true, wantErr: os.ErrExist, maxLstat: 2},
+		{name: "existing file", existingFile: true, wantErr: os.ErrExist, maxLstat: 1},
+		{name: "missing parent", missingParent: true, wantErr: os.ErrNotExist, maxLstat: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			parent := testutils.AbsFilePath(t, "/test/mkdir")
+			mkdirAll(t, base, parent, 0755)
+			target := filepath.Join(parent, "target")
+			if test.existingDir {
+				mkdirAll(t, base, target, 0700)
+				createFile(t, base, filepath.Join(target, "original"), "original contents")
+			} else if test.existingFile {
+				createFile(t, base, target, "original contents")
+			} else if test.missingParent {
+				target = filepath.Join(parent, "missing", "target")
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			err := backupFS.Mkdir(target, 0755)
+			if test.wantErr != nil {
+				require.ErrorIs(t, err, test.wantErr)
+				mustEqualFSState(t, baseFSState, base, "/")
+			} else {
+				require.NoError(t, err)
+				info, err := base.Lstat(target)
+				require.NoError(t, err)
+				require.True(t, info.IsDir())
+				modeMustBeEqual(t, 0755, info.Mode())
+			}
+			require.LessOrEqual(t, counting.calls[target], test.maxLstat, "avoid re-querying metadata established during path resolution")
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
 func TestBackupFS_MkdirAll(t *testing.T) {
 	t.Parallel()
 
@@ -768,6 +1312,75 @@ func TestBackupFS_MkdirAll(t *testing.T) {
 	// compare initial state to state after rollback
 	mustEqualFSState(t, baseFSState, base, "/")
 	mustEqualFSState(t, backupFSState, backup, "/")
+}
+
+func TestBackupFS_MkdirAllReusesResolvedMetadata(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name             string
+		existingDir      bool
+		existingFile     bool
+		missingAncestors bool
+		maxLstat         int
+	}{
+		{name: "new directory", maxLstat: 1},
+		{name: "existing directory", existingDir: true, maxLstat: 2},
+		{name: "missing ancestors", missingAncestors: true, maxLstat: 0},
+		{name: "existing file", existingFile: true, maxLstat: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			parent := testutils.AbsFilePath(t, "/test/mkdirall")
+			mkdirAll(t, base, parent, 0755)
+			target := filepath.Join(parent, "target")
+			if test.existingDir {
+				mkdirAll(t, base, target, 0700)
+				createFile(t, base, filepath.Join(target, "original"), "original contents")
+			} else if test.existingFile {
+				createFile(t, base, target, "original contents")
+			} else if test.missingAncestors {
+				target = filepath.Join(parent, "first", "second", "target")
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			for attempt := 0; attempt < 2; attempt++ {
+				counting.calls[target] = 0
+				err := backupFS.MkdirAll(target, 0755)
+				if test.existingFile {
+					require.Error(t, err)
+					var pathError *os.PathError
+					require.ErrorAs(t, err, &pathError)
+					require.Equal(t, "mkdir_all", pathError.Op)
+					require.Equal(t, target, pathError.Path)
+					mustEqualFSState(t, baseFSState, base, "/")
+				} else {
+					require.NoError(t, err)
+					info, err := base.Lstat(target)
+					require.NoError(t, err)
+					require.True(t, info.IsDir())
+					if test.existingDir {
+						modeMustBeEqual(t, 0700, info.Mode())
+						fileMustContainText(t, base, filepath.Join(target, "original"), "original contents")
+					} else {
+						modeMustBeEqual(t, 0755, info.Mode())
+					}
+				}
+				budget := test.maxLstat
+				if attempt > 0 && budget == 0 {
+					budget = 1
+				}
+				require.LessOrEqual(t, counting.calls[target], budget, "avoid re-querying metadata established during path resolution")
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
 }
 
 func TestBackupFS_Chmod(t *testing.T) {
@@ -816,6 +1429,252 @@ func TestBackupFS_Chmod(t *testing.T) {
 	// compare initial state to state after rollback
 	mustEqualFSState(t, baseFSState, base, "/")
 	mustEqualFSState(t, backupFSState, backup, "/")
+}
+
+func TestBackupFS_ChmodAvoidsDuplicateLstat(t *testing.T) {
+	t.Parallel()
+
+	for _, existingFile := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing file", false: "missing file"}[existingFile], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			filePath := testutils.AbsFilePath(t, "/test/chmod/file")
+			mkdirAll(t, base, filepath.Dir(filePath), 0755)
+			var initialMode fs.FileMode
+			if existingFile {
+				createFile(t, base, filePath, "original contents")
+				chmod(t, base, filePath, 0600)
+				info, err := base.Lstat(filePath)
+				require.NoError(t, err)
+				initialMode = info.Mode()
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			for _, mode := range []fs.FileMode{0444, 0644} {
+				counting.calls[filePath] = 0
+				err := backupFS.Chmod(filePath, mode)
+				if existingFile {
+					require.NoError(t, err)
+					info, err := base.Lstat(filePath)
+					require.NoError(t, err)
+					modeMustBeEqual(t, mode, info.Mode())
+					original, err := backup.Lstat(filePath)
+					require.NoError(t, err)
+					modeMustBeEqual(t, initialMode, original.Mode())
+					fileMustContainText(t, base, filePath, "original contents")
+				} else {
+					require.ErrorIs(t, err, os.ErrNotExist)
+					mustNotExist(t, backup, filePath)
+				}
+				require.Equal(t, 1, counting.calls[filePath], "reuse file metadata from path resolution")
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+		})
+	}
+}
+
+func TestBackupFS_ChownAvoidsDuplicateLstat(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Chown is unsupported and ignored on Windows")
+	}
+	t.Parallel()
+
+	for _, existingFile := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing file", false: "missing file"}[existingFile], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			filePath := testutils.AbsFilePath(t, "/test/chown/file")
+			mkdirAll(t, base, filepath.Dir(filePath), 0755)
+			ownerInfo, err := base.Lstat(filepath.Dir(filePath))
+			require.NoError(t, err)
+			uid, gid := toUID(ownerInfo), toGID(ownerInfo)
+			if existingFile {
+				createFile(t, base, filePath, "original contents")
+				ownerInfo, err = base.Lstat(filePath)
+				require.NoError(t, err)
+				uid, gid = toUID(ownerInfo), toGID(ownerInfo)
+			}
+			require.GreaterOrEqual(t, uid, 0)
+			require.GreaterOrEqual(t, gid, 0)
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			for attempt := 0; attempt < 2; attempt++ {
+				counting.calls[filePath] = 0
+				err := backupFS.Chown(filePath, uid, gid)
+				if existingFile {
+					require.NoError(t, err)
+					for _, filesystem := range []FS{base, backup} {
+						info, err := filesystem.Lstat(filePath)
+						require.NoError(t, err)
+						require.Equal(t, uid, toUID(info))
+						require.Equal(t, gid, toGID(info))
+					}
+					fileMustContainText(t, base, filePath, "original contents")
+				} else {
+					require.ErrorIs(t, err, os.ErrNotExist)
+					mustNotExist(t, backup, filePath)
+				}
+				require.Equal(t, 1, counting.calls[filePath], "reuse file metadata from path resolution")
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+			if existingFile {
+				info, err := base.Lstat(filePath)
+				require.NoError(t, err)
+				require.Equal(t, uid, toUID(info))
+				require.Equal(t, gid, toGID(info))
+			}
+		})
+	}
+}
+
+type chownDeniedFS struct{ FS }
+
+func (chownDeniedFS) Chown(string, int, int) error { return os.ErrPermission }
+
+func TestBackupFS_ChownPreservesPermissionError(t *testing.T) {
+	t.Parallel()
+	_, base, backup, backupFS := NewTestBackupFS(t)
+	filePath := testutils.AbsFilePath(t, "/test/chown/file")
+	createFile(t, base, filePath, "original contents")
+	baseFSState := createFSState(t, base, "/")
+	backupFSState := createFSState(t, backup, "/")
+	backupFS.base = chownDeniedFS{FS: backupFS.base}
+	err := backupFS.Chown(filePath, -1, -1)
+	require.ErrorIs(t, err, os.ErrPermission)
+	var pathError *os.PathError
+	require.ErrorAs(t, err, &pathError)
+	require.Equal(t, "chown", pathError.Op)
+	require.Equal(t, filePath, pathError.Path)
+	fileMustContainText(t, base, filePath, "original contents")
+	fileMustContainText(t, backup, filePath, "original contents")
+	require.NoError(t, backupFS.Rollback())
+	mustEqualFSState(t, baseFSState, base, "/")
+	mustEqualFSState(t, backupFSState, backup, "/")
+}
+
+func TestBackupFS_ChtimesAvoidsDuplicateLstat(t *testing.T) {
+	t.Parallel()
+
+	for _, existingFile := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing file", false: "missing file"}[existingFile], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			filePath := testutils.AbsFilePath(t, "/test/chtimes/file")
+			mkdirAll(t, base, filepath.Dir(filePath), 0755)
+			originalTime := time.Unix(1_600_000_000, 0)
+			if existingFile {
+				createFile(t, base, filePath, "original contents")
+				require.NoError(t, base.Chtimes(filePath, originalTime, originalTime))
+				info, err := base.Lstat(filePath)
+				require.NoError(t, err)
+				originalTime = info.ModTime()
+			}
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			for _, changedTime := range []time.Time{originalTime.Add(time.Hour), originalTime.Add(2 * time.Hour)} {
+				counting.calls[filePath] = 0
+				err := backupFS.Chtimes(filePath, changedTime, changedTime)
+				if existingFile {
+					require.NoError(t, err)
+					info, err := base.Lstat(filePath)
+					require.NoError(t, err)
+					require.True(t, changedTime.Equal(info.ModTime()), "apply requested modification time")
+					original, err := backup.Lstat(filePath)
+					require.NoError(t, err)
+					require.True(t, originalTime.Equal(original.ModTime()), "retain the original modification-time snapshot")
+					fileMustContainText(t, base, filePath, "original contents")
+				} else {
+					require.ErrorIs(t, err, os.ErrNotExist)
+					mustNotExist(t, backup, filePath)
+				}
+				require.Equal(t, 1, counting.calls[filePath], "reuse file metadata from path resolution")
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+			if existingFile {
+				info, err := base.Lstat(filePath)
+				require.NoError(t, err)
+				require.True(t, originalTime.Equal(info.ModTime()), "restore original modification time after rollback")
+			}
+		})
+	}
+}
+
+func TestBackupFS_LchownReusesResolvedMetadata(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Lchown is unsupported on Windows")
+	}
+	t.Parallel()
+
+	for _, existingFile := range []bool{true, false} {
+		t.Run(map[bool]string{true: "regular file", false: "missing file"}[existingFile], func(t *testing.T) {
+			_, base, backup, backupFS := NewTestBackupFS(t)
+			filePath := testutils.AbsFilePath(t, "/test/lchown/file")
+			mkdirAll(t, base, filepath.Dir(filePath), 0755)
+			ownerInfo, err := base.Lstat(filepath.Dir(filePath))
+			require.NoError(t, err)
+			uid, gid := toUID(ownerInfo), toGID(ownerInfo)
+			if existingFile {
+				createFile(t, base, filePath, "original contents")
+				ownerInfo, err = base.Lstat(filePath)
+				require.NoError(t, err)
+				uid, gid = toUID(ownerInfo), toGID(ownerInfo)
+			}
+			require.GreaterOrEqual(t, uid, 0)
+			require.GreaterOrEqual(t, gid, 0)
+			baseFSState := createFSState(t, base, "/")
+			backupFSState := createFSState(t, backup, "/")
+			counting := &lstatCountingFS{FS: backupFS.base, calls: make(map[string]int)}
+			backupFS.base = counting
+
+			for attempt := 0; attempt < 2; attempt++ {
+				counting.calls[filePath] = 0
+				err := backupFS.Lchown(filePath, uid, gid)
+				if existingFile {
+					require.NoError(t, err)
+					for _, filesystem := range []FS{base, backup} {
+						info, err := filesystem.Lstat(filePath)
+						require.NoError(t, err)
+						require.Equal(t, uid, toUID(info))
+						require.Equal(t, gid, toGID(info))
+					}
+					fileMustContainText(t, base, filePath, "original contents")
+				} else {
+					require.ErrorIs(t, err, os.ErrNotExist)
+					mustNotExist(t, backup, filePath)
+				}
+				budget := 1
+				if attempt > 0 {
+					budget = 0
+				}
+				require.Equal(t, budget, counting.calls[filePath], "query the original file once, then reuse its snapshot")
+			}
+
+			require.NoError(t, backupFS.Rollback())
+			mustEqualFSState(t, baseFSState, base, "/")
+			mustEqualFSState(t, backupFSState, backup, "/")
+			if existingFile {
+				info, err := base.Lstat(filePath)
+				require.NoError(t, err)
+				require.Equal(t, uid, toUID(info))
+				require.Equal(t, gid, toGID(info))
+			}
+		})
+	}
 }
 
 func TestTime(t *testing.T) {

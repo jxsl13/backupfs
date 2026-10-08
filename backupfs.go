@@ -202,7 +202,7 @@ func (fsys *BackupFS) ForceBackup(name string) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return err
 	}
@@ -211,7 +211,7 @@ func (fsys *BackupFS) ForceBackup(name string) (err error) {
 	if err != nil {
 		return err
 	}
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return err
 	}
@@ -230,12 +230,12 @@ func (fsys *BackupFS) Create(name string) (_ File, err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return nil, err
 	}
 
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return nil, err
 	}
@@ -259,12 +259,12 @@ func (fsys *BackupFS) Mkdir(name string, perm fs.FileMode) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return err
 	}
 
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return err
 	}
@@ -288,12 +288,12 @@ func (fsys *BackupFS) MkdirAll(name string, perm fs.FileMode) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return err
 	}
 
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return err
 	}
@@ -328,13 +328,13 @@ func (fsys *BackupFS) OpenFile(name string, flag int, perm fs.FileMode) (_ File,
 
 	// write operations require path resolution due to
 	// potentially required backups
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return nil, err
 	}
 
 	// not read only opening -> backup
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +354,7 @@ func (fsys *BackupFS) Remove(name string) (err error) {
 	return fsys.remove(name)
 }
 
-func (fsys *BackupFS) remove(name string) (err error) {
+func (fsys *BackupFS) remove(name string, resolvedInfo ...fs.FileInfo) (err error) {
 	defer func() {
 		if err != nil {
 			err = &os.PathError{Op: "remove", Path: name, Err: err}
@@ -364,12 +364,15 @@ func (fsys *BackupFS) remove(name string) (err error) {
 	// we do not resolve the final part of the path, because that is the
 	// symlink or file or directory that we want to backup.
 	// contrary to othe roperations, removing does remove the symlink, in case it is a symlink.
-	resolvedName, err := fsys.realParentPath(name)
-	if err != nil {
-		return err
+	resolvedName := name
+	if len(resolvedInfo) == 0 {
+		resolvedName, err = fsys.realParentPath(name)
+		if err != nil {
+			return err
+		}
 	}
 
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, resolvedInfo...)
 	if err != nil {
 		return err
 	}
@@ -410,15 +413,19 @@ func (fsys *BackupFS) RemoveAll(name string) (err error) {
 
 	if !fi.IsDir() {
 		// if it's a file or a symlink, directly remove it
-		err = fsys.remove(resolvedName)
+		err = fsys.remove(resolvedName, fi)
 		if err != nil {
 			return err
 		}
 		return nil
 	}
 
-	resolvedDirPaths := make([]string, 0, 1)
-	err = Walk(fsys.base, resolvedName, func(resolvedSubPath string, info fs.FileInfo, err error) error {
+	type resolvedDirectory struct {
+		path string
+		info fs.FileInfo
+	}
+	resolvedDirs := make([]resolvedDirectory, 0, 1)
+	err = walk(fsys.base, resolvedName, fi, func(resolvedSubPath string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -427,11 +434,11 @@ func (fsys *BackupFS) RemoveAll(name string) (err error) {
 			// initially we want to delete all files before we delete all of the directories
 			// but we also want to keep track of all found directories in order not to walk the
 			// dir tree again.
-			resolvedDirPaths = append(resolvedDirPaths, resolvedSubPath)
+			resolvedDirs = append(resolvedDirs, resolvedDirectory{path: resolvedSubPath, info: info})
 			return nil
 		}
 
-		return fsys.remove(resolvedSubPath)
+		return fsys.remove(resolvedSubPath, info)
 	})
 	if err != nil {
 		return err
@@ -440,10 +447,12 @@ func (fsys *BackupFS) RemoveAll(name string) (err error) {
 	// after deleting all of the files
 	//now we want to sort all of the file paths from the most
 	//nested file to the least nested file (count file path separators)
-	sort.Sort(ByMostFilePathSeparators(resolvedDirPaths))
+	sort.Slice(resolvedDirs, func(first, second int) bool {
+		return LessFilePathSeparators(resolvedDirs[second].path, resolvedDirs[first].path)
+	})
 
-	for _, emptyDir := range resolvedDirPaths {
-		err = fsys.remove(emptyDir)
+	for _, emptyDir := range resolvedDirs {
+		err = fsys.remove(emptyDir.path, emptyDir.info)
 		if err != nil {
 			return err
 		}
@@ -462,34 +471,25 @@ func (fsys *BackupFS) Rename(oldname, newname string) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedOldname, err := fsys.realPath(oldname)
+	resolvedOldname, sourceInfo, err := resolvePathWithInfo(fsys, oldname)
 	if err != nil {
 		return err
 	}
 
-	resolvedNewname, newNameFound, err := fsys.realPathWithFound(newname)
+	resolvedNewname, targetInfo, err := resolvePathWithInfo(fsys, newname)
 	if err != nil {
 		return err
 	}
 
-	if !newNameFound {
-		// only make file known in case that it does not exist, otherwise
-		// overwriting would return an error anyway.
-		err = fsys.tryBackup(resolvedNewname)
-		if err != nil {
-			return err
-		}
-
-		// there either was no previous file to be backed up
-		// but now we know that there was no file or there
-		// was a target file that has to be backed up which was then backed up
-		err = fsys.tryBackup(resolvedOldname)
-		if err != nil {
-			return err
-		}
+	err = fsys.tryBackup(resolvedNewname, targetInfo)
+	if err != nil {
+		return err
 	}
-	// in the else case Renaming to a file that already exists
-	// the Rename call will return an error anyway, so we do not backup anything in that case.
+
+	err = fsys.tryBackup(resolvedOldname, sourceInfo)
+	if err != nil {
+		return err
+	}
 
 	err = fsys.base.Rename(resolvedOldname, resolvedNewname)
 	if err != nil {
@@ -508,12 +508,12 @@ func (fsys *BackupFS) Chmod(name string, mode fs.FileMode) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return err
 	}
 
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return err
 	}
@@ -535,12 +535,12 @@ func (fsys *BackupFS) Chown(name string, uid, gid int) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return err
 	}
 
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return err
 	}
@@ -562,12 +562,12 @@ func (fsys *BackupFS) Chtimes(name string, atime, mtime time.Time) (err error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
-	resolvedName, err := fsys.realPath(name)
+	resolvedName, info, err := resolvePathWithInfo(fsys, name)
 	if err != nil {
 		return err
 	}
 
-	err = fsys.tryBackup(resolvedName)
+	err = fsys.tryBackup(resolvedName, info)
 	if err != nil {
 		return err
 	}
@@ -590,7 +590,7 @@ func (fsys *BackupFS) Symlink(oldname, newname string) (err error) {
 	defer fsys.mu.Unlock()
 
 	// cannot resolve oldname because it is not touched and it may also contain relative paths
-	resolvedNewname, err := fsys.realPath(newname)
+	resolvedNewname, info, err := resolvePathWithInfo(fsys, newname)
 	if err != nil {
 		return err
 	}
@@ -600,7 +600,7 @@ func (fsys *BackupFS) Symlink(oldname, newname string) (err error) {
 	// the old file path should not have been modified
 
 	// in case we fail to backup the symlink, we return an error
-	err = fsys.tryBackup(resolvedNewname)
+	err = fsys.tryBackup(resolvedNewname, info)
 	if err != nil {
 		return err
 	}
@@ -878,7 +878,7 @@ func (fsys *BackupFS) tryRestoreFilePaths(restoreFilePaths []string) (multiErr e
 
 // returns the cleaned path
 func (fsys *BackupFS) realPath(name string) (resolvedName string, err error) {
-	return resolvePath(fsys, filepath.Clean(name))
+	return resolvePath(fsys, name)
 }
 
 // does not resolve final part of the path (filepath.Base)
@@ -897,7 +897,7 @@ func (fsys *BackupFS) realParentPath(name string) (resolvedName string, err erro
 }
 
 func (fsys *BackupFS) realPathWithFound(name string) (resolvedName string, found bool, err error) {
-	return resolvePathWithFound(fsys, filepath.Clean(name))
+	return resolvePathWithFound(fsys, name)
 }
 
 // keeps track of files in the base filesystem.
@@ -1002,14 +1002,14 @@ func (fsys *BackupFS) tryRemoveBackup(resolvedName string) (err error) {
 	return nil
 }
 
-func (fsys *BackupFS) tryBackup(resolvedName string) (err error) {
+func (fsys *BackupFS) tryBackup(resolvedName string, knownInfo ...fs.FileInfo) (err error) {
 	defer func() {
 		if err != nil {
 			err = &os.PathError{Op: "try_backup", Path: resolvedName, Err: err}
 		}
 	}()
 
-	info, needsBackup, err := fsys.backupRequired(resolvedName)
+	info, needsBackup, err := fsys.backupRequired(resolvedName, knownInfo...)
 	if err != nil {
 		return err
 	}
@@ -1109,7 +1109,7 @@ func (fsys *BackupFS) backupDirs(resolvedDirPath string) (err error) {
 // files that do not exist in the BackupFS need to be backed up.
 // files that do exist in the BackupFS either as files or in the baseInfos map as non-existing files
 // do not  need to be backed up (again)
-func (fsys *BackupFS) backupRequired(resolvedName string) (info fs.FileInfo, required bool, err error) {
+func (fsys *BackupFS) backupRequired(resolvedName string, knownInfo ...fs.FileInfo) (info fs.FileInfo, required bool, err error) {
 
 	info, found := fsys.alreadySeenWithInfo(resolvedName)
 	if found {
@@ -1119,14 +1119,20 @@ func (fsys *BackupFS) backupRequired(resolvedName string) (info fs.FileInfo, req
 
 	// fill fsys.baseInfos
 	// of symlink, file & directory as well as their parent directories.
-	info, err = fsys.Lstat(resolvedName)
-	if isNotFoundError(err) {
+	if len(knownInfo) > 0 && (knownInfo[0] == nil || knownInfo[0].Mode()&os.ModeSymlink == 0) {
+		info = knownInfo[0]
+	} else {
+		info, err = fsys.Lstat(resolvedName)
+		if isNotFoundError(err) {
+			info = nil
+		} else if err != nil {
+			return nil, false, err
+		}
+	}
+	if info == nil {
 		fsys.setInfoIfNotAlreadySeen(resolvedName, nil)
 		// not found, no backup needed
 		return nil, false, nil
-	} else if err != nil {
-		// unexpected filesystem error
-		return nil, false, err
 	}
 
 	return info, true, nil

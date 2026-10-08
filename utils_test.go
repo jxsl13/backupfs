@@ -13,6 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type lstatCountingFS struct {
+	FS
+	calls map[string]int
+}
+
+func (fsys *lstatCountingFS) Lstat(name string) (fs.FileInfo, error) {
+	fsys.calls[filepath.Clean(name)]++
+	return fsys.FS.Lstat(name)
+}
+
 func fileMustContainText(t *testing.T, fsys FS, path, content string) {
 	path = filepath.Clean(path)
 
