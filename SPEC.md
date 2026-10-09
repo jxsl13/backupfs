@@ -50,6 +50,7 @@ Go lib. Stacked filesystem layers give backup-on-write + rollback. App modify fi
 - V16 hiddenFile Readdir/Readdirnames exclude hidden entries for ANY count value (positive and non-positive); hiding uses the full joined path, never the bare basename. (hiddenfs_file.go) ← B3
 - V17 Hidden-path protection is case-insensitive on case-insensitive filesystems (Windows, macOS): a differently-cased path cannot bypass hiding to read/modify/remove the backup location. Folding only widens hiding (safe direction). (hiddenfs.go foldPath) ← B4. Confirmed by FuzzHiddenFS_Create seed `/vAr/`.
 - V18 HiddenFS containment: path on different volume than hidden dir → not hidden (`filepath.Rel` cross-volume failure ⇒ not-contained, ⊥ error). (hiddenfs.go isInHiddenPath, dirContains) ← B5
+- V19 Root copies ! create mapped directory via `MkdirAll`; ⊥ root chmod/chown/chtimes. Confirmed by `TestCopyRootDirectoryCreatesMappingWithoutChangingMetadata`. ← B6
 
 ## §T — tasks
 
@@ -81,3 +82,4 @@ B2|2026-06-17|BackupFS.Chtimes wrapped its error as PathError{Op:"chown"} (copy-
 B3|2026-06-17|hiddenFile.Readdirnames positive-count branch called isHidden(name) with the bare basename instead of the joined full path → hidden entries leaked when a positive count was requested|join hf.filePath before isHidden → V16
 B4|2026-06-17|HiddenFS containment (isInHiddenPath/dirContains) compared paths case-SENSITIVELY; on case-insensitive FS (macOS/Windows) a differently-cased path (e.g. `/vAr/` vs `/var/`) bypassed protection and could remove/modify the hidden backup location. Found by FuzzHiddenFS_Create, pre-existing on master|foldPath case-folds operands on windows/darwin → V17
 B5|2026-06-17|HiddenFS containment propagated `filepath.Rel` cross-volume error (windows hidden dir on C: vs query path on D:) instead of treating other-volume path as not-contained → ops errored `is_hidden ...: Rel: can't make d:\ relative to c:\...`. Surfaced by moving test temp to os.TempDir|Rel failure after abs fallback ⇒ return not-contained, nil → V18
+B6|2026-10-09|`copyDir` root short-circuit skipped mapped volume-root creation in PrefixFS → drive-root file snapshots failed, e.g. backup `D:\config.env` missing mapped `D` directory|ensure root via `MkdirAll`, leave root metadata unchanged → V19
