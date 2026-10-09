@@ -106,7 +106,7 @@ func copyDir(fsys FS, name string, info fs.FileInfo) (err error) {
 		return fmt.Errorf("%w: %s", errDirInfoExpected, name)
 	}
 
-	// do not touch the root directory
+	// do not change the root directory's metadata
 	// this is either the OS root directory, which we do not want to change, as
 	// on for example redhat it's a read only directory which is not modifiable.
 	// on the other hand it is the root directory of the backup folder which has already its permissions
@@ -114,7 +114,7 @@ func copyDir(fsys FS, name string, info fs.FileInfo) (err error) {
 	base := filepath.Base(name)
 	if base == separator || base == "/" {
 		// windows supports both path separators, which is why we check for both
-		return nil
+		return fsys.MkdirAll(name, info.Mode()&chmodBits)
 	}
 
 	// try to create all dirs as somone might have tempered with the file system

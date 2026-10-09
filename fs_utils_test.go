@@ -1,6 +1,7 @@
 package backupfs
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,26 @@ import (
 	"github.com/jxsl13/backupfs/internal/testutils"
 	"github.com/stretchr/testify/require"
 )
+
+type rootDirectoryCopyFS struct {
+	FS
+	created string
+}
+
+func (root *rootDirectoryCopyFS) MkdirAll(name string, mode fs.FileMode) error {
+	root.created = name
+	return nil
+}
+
+func TestCopyRootDirectoryCreatesMappingWithoutChangingMetadata(t *testing.T) {
+	path, err := filepath.Abs(string(filepath.Separator))
+	require.NoError(t, err)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	root := &rootDirectoryCopyFS{}
+	require.NoError(t, copyDir(root, path, info))
+	require.Equal(t, path, root.created, "volume roots must be created inside prefixed backup filesystems")
+}
 
 func TestUtils_ResolvePathWithFileThatDoesntExist(t *testing.T) {
 	t.Parallel()
